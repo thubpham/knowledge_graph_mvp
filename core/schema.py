@@ -1,4 +1,5 @@
 from datetime import datetime
+import uuid
 
 class Node: 
     def __init__(self, id: str, type: str, name: str):
@@ -25,3 +26,12 @@ class Edge:
         self.source_id = None
         self.ingested_at = datetime.now()
         self.extracted_by = None
+
+class Episode: 
+    def __init__(self, text: str, source_type: str, source_id: str, reference_time: datetime):
+        self.id = str(uuid.uuid4())
+        self.text = text
+        self.source_type = source_type
+        self.source_id = source_id
+        self.reference_time = reference_time
+        self.ingested_at = datetime.now()
