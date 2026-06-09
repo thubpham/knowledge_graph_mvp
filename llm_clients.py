@@ -1,4 +1,6 @@
 from google import genai
+from google.genai import types
+from enrichment.extraction_schema import *
 
 class LLMClient:
     def __init__(self):
@@ -7,6 +9,10 @@ class LLMClient:
     def generate_gemini(self, prompt: str):
         response = self.client.models.generate_content(
             model = "gemini-2.5-flash",
-            contents = prompt
+            contents = prompt,
+            config = types.GenerateContentConfig(
+                response_mime_type = "application/json",
+                response_schema = ExtractionResult
+            )
         )
         return response.text

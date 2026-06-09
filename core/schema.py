@@ -35,3 +35,18 @@ class Episode:
         self.source_id = source_id
         self.reference_time = reference_time
         self.ingested_at = datetime.now()
+
+class UnmappedEntity: 
+    def __init__(self, name: str, attempted_type: str, fact: str, reason: str):
+        self.name = name
+        self.attempted_type = attempted_type
+        self.fact = fact
+        self.reason = reason
+
+class UnmappedRelation: 
+    def __init__(self, source: str, target: str, attempted_relation: str, fact: str, reason: str):
+        self.source = source
+        self.target = target
+        self.attempted_relation = attempted_relation
+        self.fact = fact
+        self.reason = reason
