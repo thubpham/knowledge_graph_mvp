@@ -15,4 +15,6 @@ class LLMClient:
                 response_schema = ExtractionResult
             )
         )
+        if response.text is None:
+            raise ValueError("LLM response does not contain text.")
         return response.text
