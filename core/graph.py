@@ -8,6 +8,7 @@ class KnowledgeGarden:
         self.graph = nx.MultiDiGraph()
         self.edges = {}
         self.nodes = {}
+        self.episodes = {}
 
     def add_node(self, id: str, type: str, name: str):
         if id in self.nodes:
@@ -29,6 +30,10 @@ class KnowledgeGarden:
         self.edges[str(edge_id)] = new_edge
         return str(edge_id)
     
+    def add_episode(self, episode: Episode):
+        self.episodes[episode.id] = episode
+        return episode.id
+
     def get_current_facts(self, source: str):
         if source not in self.nodes:
             raise ValueError(f"Node with id {source} does not exist.")
