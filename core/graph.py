@@ -14,9 +14,8 @@ class KnowledgeGarden:
         if id in self.nodes:
             raise ValueError(f"Node with id {id} already exists.")
         new_node = Node(id, type, name)
-        self.graph.add_node(new_node)
+        self.graph.add_node(id)
         self.nodes[id] = new_node
-        
 
     def add_edge(self, source: str, target: str, relation: str, fact:str, valid_from: datetime):
         edges = self.graph.get_edge_data(source, target)
