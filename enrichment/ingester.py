@@ -9,7 +9,7 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
     response = extract_entities_and_relations(raw_text, client)
     node_id_mapping = {}
     for node in response.nodes:
-        existing_node_id = resolve_entity(node, kg)
+        existing_node_id = resolve_entity(node.name, kg)
         if existing_node_id is None:
             new_id = normalize(node.name).replace(" ", "_")
             kg.add_node(new_id, node.type, node.name)

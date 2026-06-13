@@ -72,3 +72,45 @@ Output:
 Input Text: "{text}"
 Output:
 """
+
+QUERY_INTENT_PROMPT = """
+You are a query router for a knowledge graph. Given a natural language question, classify it into exactly one traversal pattern and extract the parameters needed to execute it.
+
+### Traversal Patterns
+- "direct_lookup" — asking for a specific relationship of a named entity (e.g. "who owns X?", "what team is alice on?")
+- "neighborhood" — asking what is broadly connected to or related to an entity (e.g. "what does the infra team work with?")
+- "path" — asking how two specific entities are connected (e.g. "how is alice connected to postgres?")
+- "impact" — asking what would be affected if an entity changed or failed (e.g. "what breaks if postgres goes down?")
+- "history" — asking about past states, changes over time, or "has X ever been Y" (e.g. "what teams has alice been on?")
+
+### Relation Vocabulary
+MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | MENTIONED_IN
+
+### Output Format
+Return ONLY a valid JSON object with these keys:
+- "pattern": one of the 5 pattern names above
+- "anchor_entity": the primary entity the question is about, as it appears in the question (lowercase, normalized form expected to match a node name)
+- "relation": the relation type from the vocabulary above that's relevant to this query, or null if not applicable
+- "direction": "in" or "out" — for direct_lookup and history, indicates whether the anchor entity is the source or target of the relation. Use "out" if the anchor is doing the action (e.g. "alice MEMBER_OF X"), "in" if the anchor is receiving it (e.g. "X OWNS auth_service" — anchor is auth_service, direction is "in")
+- "target_entity": for "path" queries only, the second entity. Otherwise null.
+
+### Examples
+Question: "Who owns the auth service?"
+Output: {"pattern": "direct_lookup", "anchor_entity": "auth service", "relation": "OWNS", "direction": "in", "target_entity": null}
+
+Question: "What teams has alice been on?"
+Output: {"pattern": "history", "anchor_entity": "alice", "relation": "MEMBER_OF", "direction": "out", "target_entity": null}
+
+Question: "What breaks if postgres goes down?"
+Output: {"pattern": "impact", "anchor_entity": "postgres", "relation": "DEPENDS_ON", "direction": "in", "target_entity": null}
+
+Question: "How is alice connected to postgres?"
+Output: {"pattern": "path", "anchor_entity": "alice", "relation": null, "direction": null, "target_entity": "postgres"}
+
+Question: "What does the infra team work with?"
+Output: {"pattern": "neighborhood", "anchor_entity": "infra team", "relation": null, "direction": null, "target_entity": null}
+
+### Current Task
+Question: "{question}"
+Output:
+"""

@@ -8,8 +8,8 @@ def normalize(text: str):
     text = re.sub(r'[^\w\s]', '', text)
     return text.strip()
 
-def resolve_entity(node: ExtractedNode, kg: KnowledgeGarden):
-    normalized_name = normalize(node.name)
+def resolve_entity(node_name: str, kg: KnowledgeGarden):
+    normalized_name = normalize(node_name)
     for existing_node in kg.nodes.values():
         if normalize(existing_node.name) == normalized_name:
             return existing_node.id
