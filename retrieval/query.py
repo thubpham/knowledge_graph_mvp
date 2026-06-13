@@ -9,7 +9,8 @@ def query(kg: KnowledgeGarden, question: str, client: LLMClient):
     prompt = QUERY_INTENT_PROMPT.replace("{question}", question)
     response = client.generate_gemini(prompt, schema_type = QueryIntent)  
     query_intent = QueryIntent.model_validate_json(response)
-    anchor_id = resolve_entity(query_intent.anchor_entity, kg)
+    # anchor_id = resolve_entity(query_intent.anchor_entity, kg)
+    anchor_id = query_intent.anchor_entity
     if anchor_id is None:
         return {
             "error": "entity not found", 
@@ -19,7 +20,8 @@ def query(kg: KnowledgeGarden, question: str, client: LLMClient):
     if query_intent.pattern == "path":
         if query_intent.target_entity is None:
             return {"error": "path query missing target_entity"}
-        target_id = resolve_entity(query_intent.target_entity, kg)
+        # target_id = resolve_entity(query_intent.target_entity, kg)
+        target_id = query_intent.target_entity
         if target_id is None:
             return {"error": "entity not found", "anchor_entity": query_intent.target_entity}
     anchor_node = kg.nodes[anchor_id]

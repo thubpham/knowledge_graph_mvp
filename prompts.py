@@ -96,7 +96,7 @@ Return ONLY a valid JSON object with these keys:
 
 ### Examples
 Question: "Who owns the auth service?"
-Output: {"pattern": "direct_lookup", "anchor_entity": "auth service", "relation": "OWNS", "direction": "in", "target_entity": null}
+Output: {"pattern": "direct_lookup", "anchor_entity": "auth_service", "relation": "OWNS", "direction": "in", "target_entity": null}
 
 Question: "What teams has alice been on?"
 Output: {"pattern": "history", "anchor_entity": "alice", "relation": "MEMBER_OF", "direction": "out", "target_entity": null}
@@ -108,7 +108,7 @@ Question: "How is alice connected to postgres?"
 Output: {"pattern": "path", "anchor_entity": "alice", "relation": null, "direction": null, "target_entity": "postgres"}
 
 Question: "What does the infra team work with?"
-Output: {"pattern": "neighborhood", "anchor_entity": "infra team", "relation": null, "direction": null, "target_entity": null}
+Output: {"pattern": "neighborhood", "anchor_entity": "infra_team", "relation": null, "direction": null, "target_entity": null}
 
 ### Current Task
 Question: "{question}"
