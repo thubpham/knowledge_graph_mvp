@@ -31,6 +31,7 @@ class KnowledgeGarden:
     
     def add_episode(self, episode: Episode):
         self.episodes[episode.id] = episode
+        self.graph.add_node(episode.id)
         return episode.id
 
     def get_current_facts(self, source: str):

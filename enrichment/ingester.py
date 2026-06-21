@@ -24,4 +24,6 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
             continue
         kg.add_edge(source_id, target_id, edge.relation, edge.fact, reference_time)
     episode_id = kg.add_episode(episode)
+    for node in node_id_mapping.values():
+        kg.add_edge(node, episode_id, "MENTIONED_IN", "entity mentioned in this episode", reference_time)
     return episode_id
