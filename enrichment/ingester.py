@@ -22,7 +22,10 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
         if source_id is None or target_id is None:
             print(f"Skipping edge with unmapped source or target: {edge}")
             continue
-        kg.add_edge(source_id, target_id, edge.relation, edge.fact, reference_time)
+        try:
+            kg.add_edge(source_id, target_id, edge.relation, edge.fact, reference_time)
+        except ValueError:
+            pass
     episode_id = kg.add_episode(episode)
     for node in node_id_mapping.values():
         kg.add_edge(node, episode_id, "MENTIONED_IN", "entity mentioned in this episode", reference_time)
