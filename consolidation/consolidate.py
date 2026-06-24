@@ -11,14 +11,14 @@ from .consolidation_schema import ConsolidationResult
 
 
 def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
-    if entity_id not in kg.nodes:
+    if not kg.node_exists(entity_id):
         raise ValueError(f"Node with id {entity_id} does not exist.")
 
     episodes = get_episode_for_entity(entity_id, kg)
     if not episodes:
         return None
 
-    node = kg.nodes[entity_id]
+    node = kg.get_node(entity_id)
 
     episodes_text = "\n".join(
         f'{i+1}. "{ep.text}"' for i, ep in enumerate(episodes)
@@ -34,9 +34,11 @@ def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
     result = ConsolidationResult(**json.loads(raw))
 
     run_id = str(uuid.uuid4())
-    node.summary = result.summary
-    node.consolidated = True
-    node.consolidation_run_id = run_id
+    kg.update_node(entity_id,
+        summary=result.summary,
+        consolidated=True,
+        consolidation_run_id=run_id,
+    )
 
     edges_added = 0
     unresolved_edges = []

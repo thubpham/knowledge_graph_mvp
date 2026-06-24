@@ -1,76 +1,70 @@
 from core.schema import *
 from core.graph import KnowledgeGarden
-import networkx as nx
 
-def direct_lookup(kg: KnowledgeGarden, node: Node, 
-                  relation: str, direction: str = 'out') -> list[Edge]:
-    output = []
+
+def direct_lookup(kg: KnowledgeGarden, node: Node, relation: str, direction: str = 'out') -> list:
     if direction == 'out':
-        for edge in kg.edges.values():
-            if edge.source == node.id and edge.relation == relation and edge.valid_until is None:
-                output.append(edge)
-    else: 
-        for edge in kg.edges.values():
-            if edge.target == node.id and edge.relation == relation and edge.valid_until is None:
-                output.append(edge)
-    return output
+        return kg.get_outgoing_edges(node.id, relation=relation, active_only=True)
+    else:
+        return kg.get_incoming_edges(node.id, relation=relation, active_only=True)
 
-def neighbor_expansion(kg: KnowledgeGarden, node: Node, depth: int = 2) -> list[Edge]:
-    discovered_edges = set()
+
+def neighbor_expansion(kg: KnowledgeGarden, node: Node, depth: int = 2) -> list:
+    seen_edge_ids = set()
+    discovered_edges = []
     visited_nodes = set()
     visited_nodes.add(node.id)
-    queue = [(node.id, 0)] 
+    queue = [(node.id, 0)]
     while queue:
         current_node_id, current_depth = queue.pop(0)
         if current_depth < depth:
-            for edge in kg.edges.values():
-                if edge.source == current_node_id and edge.valid_until is None:
-                    discovered_edges.add(edge)
-                    if edge.target not in visited_nodes:
-                        visited_nodes.add(edge.target)
-                        queue.append((edge.target, current_depth + 1))
-                elif edge.target == current_node_id and edge.valid_until is None:
-                    discovered_edges.add(edge)
-                    if edge.source not in visited_nodes:
-                        visited_nodes.add(edge.source)
-                        queue.append((edge.source, current_depth + 1))
-    return list(discovered_edges)
-
-def path_finding(kg: KnowledgeGarden, source: Node, target: Node) -> list[Edge]:
-    discovered_nodes = nx.shortest_path(kg.graph.to_undirected(), source.id, target.id)
-    discovered_edges = []
-    for i in range(1, len(discovered_nodes)):
-        for edge in kg.edges.values():
-            if (edge.source == discovered_nodes[i-1] and edge.target == discovered_nodes[i] and edge.valid_until is None) or (edge.source == discovered_nodes[i] and edge.target == discovered_nodes[i-1] and edge.valid_until is None):
-                discovered_edges.append(edge)
+            for edge in kg.get_outgoing_edges(current_node_id, active_only=True):
+                if edge.id not in seen_edge_ids:
+                    seen_edge_ids.add(edge.id)
+                    discovered_edges.append(edge)
+                if edge.target not in visited_nodes:
+                    visited_nodes.add(edge.target)
+                    queue.append((edge.target, current_depth + 1))
+            for edge in kg.get_incoming_edges(current_node_id, active_only=True):
+                if edge.id not in seen_edge_ids:
+                    seen_edge_ids.add(edge.id)
+                    discovered_edges.append(edge)
+                if edge.source not in visited_nodes:
+                    visited_nodes.add(edge.source)
+                    queue.append((edge.source, current_depth + 1))
     return discovered_edges
 
-def impact_traversal(kg: KnowledgeGarden, node: Node, relation: str, direction: str = 'out'):
-    discovered_edges = set()
+
+def path_finding(kg: KnowledgeGarden, source: Node, target: Node) -> list:
+    return kg.get_shortest_path_edges(source.id, target.id)
+
+
+def impact_traversal(kg: KnowledgeGarden, node: Node, relation: str, direction: str = 'out') -> list:
+    seen_edge_ids = set()
+    discovered_edges = []
     visited_nodes = set()
+
     def dfs(current_node_id):
         visited_nodes.add(current_node_id)
-        for edge in kg.edges.values():
-            if direction == 'out' and edge.source == current_node_id and edge.relation == relation and edge.valid_until is None:
-                discovered_edges.add(edge)
-                if edge.target not in visited_nodes:
-                    dfs(edge.target)
-            elif direction == 'in' and edge.target == current_node_id and edge.relation == relation and edge.valid_until is None:
-                discovered_edges.add(edge)
-                if edge.source not in visited_nodes:
-                    dfs(edge.source)
-    dfs(node.id)
-    return list(discovered_edges)
+        if direction == 'out':
+            edges = kg.get_outgoing_edges(current_node_id, relation=relation, active_only=True)
+        else:
+            edges = kg.get_incoming_edges(current_node_id, relation=relation, active_only=True)
+        for edge in edges:
+            if edge.id not in seen_edge_ids:
+                seen_edge_ids.add(edge.id)
+                discovered_edges.append(edge)
+            next_id = edge.target if direction == 'out' else edge.source
+            if next_id not in visited_nodes:
+                dfs(next_id)
 
-def history_traversal(kg: KnowledgeGarden, node: Node, relation: str, direction: str = 'out') -> list[Edge]:
-    output = []
+    dfs(node.id)
+    return discovered_edges
+
+
+def history_traversal(kg: KnowledgeGarden, node: Node, relation: str, direction: str = 'out') -> list:
     if direction == 'out':
-        for edge in kg.edges.values():
-            if edge.source == node.id and edge.relation == relation:
-                output.append(edge)
-    else: 
-        for edge in kg.edges.values():
-            if edge.target == node.id and edge.relation == relation:
-                output.append(edge)
-    output.sort(key=lambda e: e.valid_from)
-    return output
+        edges = kg.get_outgoing_edges(node.id, relation=relation, active_only=False)
+    else:
+        edges = kg.get_incoming_edges(node.id, relation=relation, active_only=False)
+    return sorted(edges, key=lambda e: e.valid_from)

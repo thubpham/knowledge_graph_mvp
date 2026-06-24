@@ -9,12 +9,12 @@ class Node:
         self.name = name
         self.summary = None
         self.embeddings = None
-        self.created_at = datetime.now()
+        self.created_at = datetime.now() or None
         self.consolidated = False 
         self.consolidation_run_id = None
 
 class Edge: 
-    def __init__(self, id: str, source: str, target: str, relation: str, fact: str, valid_from: datetime):
+    def __init__(self, id: str, source: str, target: str, relation: str, fact: str, valid_from: datetime | None):
         self.id = id
         self.source = source
         self.target = target

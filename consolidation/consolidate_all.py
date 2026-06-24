@@ -10,17 +10,15 @@ def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: st
     all_unresolved = []
     consolidated_count = 0
 
-    for entity_id in list(kg.nodes.keys()):
-        node = kg.nodes[entity_id]
+    for node in kg.get_all_nodes():
         if node.consolidated:
             continue
-        result = consolidate(entity_id, kg, client)
+        result = consolidate(node.id, kg, client)
         if result is None:
             continue
         consolidated_count += 1
         all_unresolved.extend(result["unresolved_edges"])
 
-    # Second pass: retry edges that may resolve now that all nodes are consolidated
     still_unresolved = []
     second_pass_count = 0
 

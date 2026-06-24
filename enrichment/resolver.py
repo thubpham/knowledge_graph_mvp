@@ -1,16 +1,16 @@
-
-from .extraction_schema import *
 from core.graph import KnowledgeGarden
 import re
 
-def normalize(text: str):
+
+def normalize(text: str) -> str:
     text = text.lower()
     text = re.sub(r'[^\w\s]', '', text)
     return text.strip()
 
+
 def resolve_entity(node_name: str, kg: KnowledgeGarden):
     normalized_name = normalize(node_name)
-    for existing_node in kg.nodes.values():
-        if normalize(existing_node.name) == normalized_name:
-            return existing_node.id
+    for node in kg.get_all_nodes():
+        if normalize(node.name) == normalized_name:
+            return node.id
     return None
