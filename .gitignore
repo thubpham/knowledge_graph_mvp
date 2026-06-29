@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 .DS_Store
+data/sources/credentials.json
+data/sources/token.json
+data/notion_last_fetched.json
+data/gcal_last_fetched.json
+pending_edges.txt
