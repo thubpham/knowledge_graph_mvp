@@ -41,17 +41,17 @@ class LLMClient:
         delay = 5
         for attempt in range(max_retries):
             try:
-                resp = httpx.post(_BASE_URL, json=payload, headers=headers, timeout=60)
+                resp = httpx.post(_BASE_URL, json=payload, headers=headers, timeout=120)
                 if resp.status_code in (429, 503):
                     raise _TransientError(resp.status_code, resp.text)
                 resp.raise_for_status()
                 data = resp.json()
-                # Extract text content from normalized response
                 content = data["output"][0]["content"][0]["text"]
                 return content
-            except _TransientError as e:
+            except (httpx.TimeoutException, httpx.RemoteProtocolError, _TransientError) as e:
                 if attempt < max_retries - 1:
-                    print(f"Transient error ({e.status}). Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                    status = e.status if isinstance(e, _TransientError) else type(e).__name__
+                    print(f"Transient error ({status}). Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
                     time.sleep(delay)
                     delay *= 2
                 else:
