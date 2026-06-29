@@ -12,7 +12,10 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
         existing_node_id = resolve_entity(node.name, kg)
         if existing_node_id is None:
             new_id = normalize(node.name).replace(" ", "_")
-            kg.add_node(new_id, node.type, node.name)
+            try:
+                kg.add_node(new_id, node.type, node.name)
+            except ValueError:
+                pass  # ID collision with a near-duplicate name — reuse existing node
             node_id_mapping[node.name] = new_id
         else:
             node_id_mapping[node.name] = existing_node_id
@@ -27,6 +30,9 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
         except ValueError:
             pass
     episode_id = kg.add_episode(episode)
-    for node in node_id_mapping.values():
-        kg.add_edge(node, episode_id, "MENTIONED_IN", "entity mentioned in this episode", reference_time)
+    for node in set(node_id_mapping.values()):
+        try:
+            kg.add_edge(node, episode_id, "MENTIONED_IN", "entity mentioned in this episode", reference_time)
+        except ValueError:
+            pass
     return episode_id

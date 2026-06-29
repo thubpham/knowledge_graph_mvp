@@ -67,6 +67,7 @@ class KnowledgeGarden:
         return edge
 
     def _episode_from_props(self, props: dict) -> Episode:
+        import json as _json
         ep = object.__new__(Episode)
         ep.id = props['id']
         ep.text = props['text']
@@ -74,6 +75,8 @@ class KnowledgeGarden:
         ep.source_id = props.get('source_id')
         ep.reference_time = _parse_dt(props.get('reference_time'))
         ep.ingested_at = _parse_dt(props.get('ingested_at'))
+        raw_meta = props.get('metadata')
+        ep.metadata = _json.loads(raw_meta) if raw_meta else None
         return ep
 
     # ── Write methods ────────────────────────────────────────────────────────
@@ -116,9 +119,11 @@ class KnowledgeGarden:
         return edge_id
 
     def add_episode(self, episode: Episode) -> str:
+        import json as _json
         self._graph.query(
             "CREATE (:Episode {id: $id, text: $text, source_type: $source_type, "
-            "source_id: $source_id, reference_time: $reference_time, ingested_at: $ingested_at})",
+            "source_id: $source_id, reference_time: $reference_time, ingested_at: $ingested_at, "
+            "metadata: $metadata})",
             {
                 'id': episode.id,
                 'text': episode.text,
@@ -126,6 +131,7 @@ class KnowledgeGarden:
                 'source_id': episode.source_id,
                 'reference_time': _fmt_dt(episode.reference_time),
                 'ingested_at': _fmt_dt(episode.ingested_at),
+                'metadata': _json.dumps(episode.metadata) if episode.metadata else None,
             }
         )
         return episode.id
@@ -231,6 +237,27 @@ class KnowledgeGarden:
             {'entity_id': entity_id}
         )
         return [self._episode_from_props(r[0].properties) for r in result.result_set]
+
+    def get_episode_by_source(self, source_id: str) -> Episode | None:
+        result = self._graph.query(
+            "MATCH (ep:Episode {source_id: $source_id}) RETURN ep LIMIT 1",
+            {'source_id': source_id}
+        )
+        if not result.result_set:
+            return None
+        return self._episode_from_props(result.result_set[0][0].properties)
+
+    def update_episode(self, episode_id: str, **kwargs):
+        import json as _json
+        params = {'id': episode_id}
+        set_parts = []
+        for k, v in kwargs.items():
+            params[k] = _json.dumps(v) if isinstance(v, dict) else v
+            set_parts.append(f"ep.{k} = ${k}")
+        self._graph.query(
+            f"MATCH (ep:Episode {{id: $id}}) SET {', '.join(set_parts)}",
+            params
+        )
 
     def get_shortest_path_edges(self, source_id: str, target_id: str) -> list:
         result = self._graph.query(
