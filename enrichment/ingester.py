@@ -33,6 +33,8 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
     for node in set(node_id_mapping.values()):
         try:
             kg.add_edge(node, episode_id, "MENTIONED_IN", "entity mentioned in this episode", reference_time)
+            # Mark entity as needing re-consolidation since it has new episodic data
+            kg.update_node(node, consolidated=False)
         except ValueError:
             pass
     return episode_id

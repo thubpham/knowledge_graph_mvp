@@ -58,6 +58,9 @@ def query(kg: KnowledgeGarden, question: str, client: LLMClient, now: datetime):
     else:
         return {"error": "unknown pattern", "pattern": query_intent.pattern}
 
-    valid_edges = [e for e in returned_edges if score_edge(e, now) != 0.0]
+    valid_edges = [
+        e for e in returned_edges
+        if score_edge(e, now) != 0.0 and e.relation != "MENTIONED_IN"
+    ]
     valid_edges.sort(key=lambda e: score_edge(e, now), reverse=True)
     return valid_edges

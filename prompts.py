@@ -115,6 +115,21 @@ Question: "{question}"
 Output:
 """
 
+SYNTHESIS_PROMPT = """
+You are answering a question using only the facts retrieved from a personal knowledge graph.
+
+Question: {question}
+
+Retrieved facts:
+{facts}
+
+Instructions:
+- Answer the question directly and concisely using only the facts above.
+- Write in plain prose, 2-4 sentences max.
+- If the facts don't fully answer the question, say what you do know and note the gap.
+- Do not invent anything beyond the retrieved facts.
+"""
+
 CONSOLIDATION_PROMPT = """
 You are consolidating episodic memory about an entity into semantic knowledge.
 

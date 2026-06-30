@@ -12,15 +12,16 @@ def ingest_notion_pages(kg: KnowledgeGarden, client: LLMClient) -> dict:
     ingested = 0
     skipped_dedup = 0
 
-    for page in pages:
+    total = len(pages)
+    for i, page in enumerate(pages, 1):
         page_id = page["page_id"]
 
         if kg.get_episode_by_source(page_id) is not None:
             skipped_dedup += 1
-            print(f"Skipping '{page['page_title']}' (already ingested)")
+            print(f"[{i}/{total}] Skipping '{page['page_title']}' (already ingested)")
             continue
 
-        print(f"Ingesting '{page['page_title']}'...")
+        print(f"[{i}/{total}] Ingesting '{page['page_title']}'...")
         reference_time = datetime.fromisoformat(page["last_edited_time"])
 
         episode_id = ingest_episode(

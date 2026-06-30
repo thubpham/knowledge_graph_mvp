@@ -10,13 +10,17 @@ def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: st
     all_unresolved = []
     consolidated_count = 0
 
-    for node in kg.get_all_nodes():
-        if node.consolidated:
-            continue
+    pending = [n for n in kg.get_all_nodes() if not n.consolidated]
+    total = len(pending)
+    print(f"Consolidating {total} entities...")
+    for i, node in enumerate(pending, 1):
+        print(f"[{i}/{total}] {node.name} ({node.id})")
         result = consolidate(node.id, kg, client)
         if result is None:
+            print(f"  → no episodes, skipped")
             continue
         consolidated_count += 1
+        print(f"  → {result['edges_added']} edges added, {len(result['unresolved_edges'])} unresolved")
         all_unresolved.extend(result["unresolved_edges"])
 
     still_unresolved = []

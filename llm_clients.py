@@ -58,6 +58,34 @@ class LLMClient:
                     raise
 
 
+    def generate_text(self, prompt: str, max_retries: int = 5) -> str:
+        payload = {
+            "model": _MODEL,
+            "input": prompt,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        delay = 5
+        for attempt in range(max_retries):
+            try:
+                resp = httpx.post(_BASE_URL, json=payload, headers=headers, timeout=120)
+                if resp.status_code in (429, 503):
+                    raise _TransientError(resp.status_code, resp.text)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["output"][0]["content"][0]["text"]
+            except (httpx.TimeoutException, httpx.RemoteProtocolError, _TransientError) as e:
+                if attempt < max_retries - 1:
+                    status = e.status if isinstance(e, _TransientError) else type(e).__name__
+                    print(f"Transient error ({status}). Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    raise
+
+
 class _TransientError(Exception):
     def __init__(self, status, body):
         self.status = status

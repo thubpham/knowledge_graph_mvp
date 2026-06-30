@@ -12,15 +12,16 @@ def ingest_gcal_events(kg: KnowledgeGarden, client: LLMClient) -> dict:
     ingested = 0
     skipped_dedup = 0
 
-    for event in events:
+    total = len(events)
+    for i, event in enumerate(events, 1):
         event_id = event["event_id"]
 
         if kg.get_episode_by_source(event_id) is not None:
             skipped_dedup += 1
-            print(f"Skipping '{event['title']}' (already ingested)")
+            print(f"[{i}/{total}] Skipping '{event['title']}' (already ingested)")
             continue
 
-        print(f"Ingesting '{event['title']}'...")
+        print(f"[{i}/{total}] Ingesting '{event['title']}'...")
         reference_time = datetime.fromisoformat(event["event_time"])
 
         episode_id = ingest_episode(
