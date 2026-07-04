@@ -76,6 +76,49 @@ class EntityResult(BaseModel):
     summary: str | None
 
 
+class GraphNode(BaseModel):
+    id: str
+    name: str
+    type: str
+    summary: str | None
+
+
+class GraphEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    relation: str
+    fact: str
+    score: float
+    valid_from: str | None
+    valid_until: str | None
+    confidence: float
+
+
+class GraphResponse(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
+class EpisodeResult(BaseModel):
+    id: str
+    text: str
+    source_type: str | None
+    source_id: str | None
+    reference_time: str | None
+    metadata: dict | None = None
+
+
+class NodeDetail(BaseModel):
+    id: str
+    name: str
+    type: str
+    summary: str | None
+    outgoing: list[GraphEdge]
+    incoming: list[GraphEdge]
+    episodes: list[EpisodeResult]
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -99,6 +142,64 @@ def list_entities(q: str = ""):
         nodes = [n for n in nodes if q_lower in n.name.lower() or q_lower in n.id.lower()]
     nodes.sort(key=lambda n: n.name.lower())
     return [EntityResult(id=n.id, name=n.name, type=n.type, summary=n.summary) for n in nodes]
+
+
+def _to_graph_edge(e: Edge, now: datetime) -> GraphEdge:
+    return GraphEdge(
+        id=e.id,
+        source=e.source,
+        target=e.target,
+        relation=e.relation,
+        fact=e.fact,
+        score=round(score_edge(e, now), 4),
+        valid_from=e.valid_from.isoformat() if e.valid_from else None,
+        valid_until=e.valid_until.isoformat() if e.valid_until else None,
+        confidence=e.confidence or 1.0,
+    )
+
+
+@app.get("/graph", response_model=GraphResponse)
+def get_graph():
+    """Full graph snapshot for rendering: all entities + active, non-mention edges."""
+    kg = get_kg()
+    now = datetime.now()
+    nodes = kg.get_all_nodes()
+    edges = [
+        e for e in kg.get_all_edges()
+        if e.relation != "MENTIONED_IN" and score_edge(e, now) != 0.0
+    ]
+    return GraphResponse(
+        nodes=[GraphNode(id=n.id, name=n.name, type=n.type, summary=n.summary) for n in nodes],
+        edges=[_to_graph_edge(e, now) for e in edges],
+    )
+
+
+@app.get("/node/{node_id}", response_model=NodeDetail)
+def get_node_detail(node_id: str):
+    kg = get_kg()
+    now = datetime.now()
+    node = kg.get_node(node_id)
+    if node is None:
+        return NodeDetail(id=node_id, name=node_id, type="unknown", summary=None,
+                           outgoing=[], incoming=[], episodes=[])
+
+    outgoing = [_to_graph_edge(e, now) for e in kg.get_outgoing_edges(node_id) if e.relation != "MENTIONED_IN"]
+    incoming = [_to_graph_edge(e, now) for e in kg.get_incoming_edges(node_id) if e.relation != "MENTIONED_IN"]
+    episodes = [
+        EpisodeResult(
+            id=ep.id,
+            text=ep.text,
+            source_type=ep.source_type,
+            source_id=ep.source_id,
+            reference_time=ep.reference_time.isoformat() if ep.reference_time else None,
+            metadata=ep.metadata,
+        )
+        for ep in kg.get_episodes_for_entity(node_id)
+    ]
+    return NodeDetail(
+        id=node.id, name=node.name, type=node.type, summary=node.summary,
+        outgoing=outgoing, incoming=incoming, episodes=episodes,
+    )
 
 
 @app.post("/query", response_model=QueryResponse)

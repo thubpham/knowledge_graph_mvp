@@ -17,5 +17,6 @@ result = consolidate_all(kg, client)
 
 print(f"\n── Consolidation complete ──")
 print(f"  Consolidated:          {result['consolidated']}")
+print(f"  Errors:                {result['errors']}")
 print(f"  Edges resolved (pass2): {result['edges_resolved_second_pass']}")
 print(f"  Still unresolved:      {result['still_unresolved']}")

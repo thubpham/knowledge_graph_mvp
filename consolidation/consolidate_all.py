@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 
 from core.graph import KnowledgeGarden
@@ -9,13 +10,30 @@ from .consolidate import consolidate
 def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: str = "pending_edges.txt"):
     all_unresolved = []
     consolidated_count = 0
+    error_count = 0
 
     pending = [n for n in kg.get_all_nodes() if not n.consolidated]
     total = len(pending)
     print(f"Consolidating {total} entities...")
+    start = time.monotonic()
+    consecutive_errors = 0
     for i, node in enumerate(pending, 1):
-        print(f"[{i}/{total}] {node.name} ({node.id})")
-        result = consolidate(node.id, kg, client)
+        elapsed = time.monotonic() - start
+        avg = elapsed / (i - 1) if i > 1 else 0
+        remaining = (total - i + 1) * avg
+        print(f"[{i}/{total}] {node.name} ({node.id})  "
+              f"[elapsed {elapsed/60:.1f}m, ETA {remaining/60:.1f}m]")
+        try:
+            result = consolidate(node.id, kg, client)
+        except Exception as e:
+            consecutive_errors += 1
+            error_count += 1
+            print(f"  → error, skipped: {e}")
+            if consecutive_errors >= 5:
+                print(f"  ⚠ {consecutive_errors} consecutive errors — likely an API/billing issue, not bad data. Aborting early.")
+                break
+            continue
+        consecutive_errors = 0
         if result is None:
             print(f"  → no episodes, skipped")
             continue
@@ -44,6 +62,7 @@ def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: st
 
     return {
         "consolidated": consolidated_count,
+        "errors": error_count,
         "edges_resolved_second_pass": second_pass_count,
         "still_unresolved": len(still_unresolved),
     }
