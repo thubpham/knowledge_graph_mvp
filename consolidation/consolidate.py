@@ -44,7 +44,7 @@ def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
     unresolved_edges = []
 
     for se in result.semantic_edges:
-        target_id = resolve_entity(se.target, kg)
+        target_id = resolve_entity(se.target, None, kg, client)
         if target_id is None:
             unresolved_edges.append({
                 "source_id": entity_id,

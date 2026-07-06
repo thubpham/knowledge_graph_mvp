@@ -21,22 +21,22 @@ for i, text in enumerate(episodes):
     episode_id = ingest_episode(text, datetime.now(), client, kg)
     print(f"[{i+1}] ingested → episode {episode_id}")
 
-print(f"\nNodes: {list(kg.nodes.keys())}")
-print(f"Edges: {[(e.source, e.relation, e.target) for e in kg.edges.values()]}")
+print(f"\nNodes: {[n.id for n in kg.get_all_nodes()]}")
+print(f"Edges: {[(e.source, e.relation, e.target) for e in kg.get_all_edges()]}")
 
 print("\n=== Running consolidate_all ===")
 result = consolidate_all(kg, client)
 print(f"Result: {result}")
 
 print("\n=== Node summaries after consolidation ===")
-for node_id, node in kg.nodes.items():
+for node in kg.get_all_nodes():
     if node.summary:
         print(f"\n[{node.name}]\n  summary: {node.summary}\n  consolidated: {node.consolidated}")
 
 print("\n=== All edges after consolidation ===")
-for edge in kg.edges.values():
-    src = kg.nodes.get(edge.source, None)
-    tgt = kg.nodes.get(edge.target, None)
+for edge in kg.get_all_edges():
+    src = kg.get_node(edge.source)
+    tgt = kg.get_node(edge.target)
     src_name = src.name if src else edge.source
     tgt_name = tgt.name if tgt else edge.target
     if edge.relation != "MENTIONED_IN":

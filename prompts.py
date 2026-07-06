@@ -73,6 +73,34 @@ Input Text: "{text}"
 Output:
 """
 
+ENTITY_MATCH_PROMPT = """
+You are resolving whether a newly-extracted entity refers to the same real-world entity as one of several existing candidates in a knowledge graph.
+
+### New Entity
+Name: {new_name}
+Type: {new_type}
+
+### Candidates
+{candidates}
+
+### Instructions
+- Decide if the New Entity is the same real-world entity as exactly one of the candidates (e.g. an abbreviation, synonym, alternate phrasing, or naming variant of the same thing).
+- Only match if you are confident they refer to the same thing. When in doubt, do not match — a missed merge is cheaper to fix than a wrongful one.
+- Do not match candidates that are merely related or similar in topic but are distinct entities.
+
+### Output Format
+Return ONLY a valid JSON object with these keys:
+- "match_name": the exact "name" string of the matching candidate, or null if none match.
+- "reason": a short justification for your decision.
+
+### Current Task
+New Entity: {new_name} (type: {new_type})
+Candidates:
+{candidates}
+
+Output:
+"""
+
 QUERY_INTENT_PROMPT = """
 You are a query router for a knowledge graph. Given a natural language question, classify it into exactly one traversal pattern and extract the parameters needed to execute it.
 

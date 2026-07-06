@@ -29,3 +29,7 @@ class ExtractionResult(BaseModel):
     edges: List[ExtractedEdge]
     unmapped_entities: List[UnmappedEntity]
     unmapped_relations: List[UnmappedRelation]
+
+class EntityMatchResult(BaseModel):
+    match_name: str | None
+    reason: str

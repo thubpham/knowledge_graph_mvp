@@ -38,6 +38,12 @@ class KnowledgeGarden:
                 self._graph.query(idx)
             except Exception:
                 pass
+        try:
+            self._graph.create_node_vector_index(
+                'Entity', 'embedding', dim=768, similarity_function='cosine'
+            )
+        except Exception:
+            pass
 
     # ── Deserializers ────────────────────────────────────────────────────────
 
@@ -81,15 +87,54 @@ class KnowledgeGarden:
 
     # ── Write methods ────────────────────────────────────────────────────────
 
-    def add_node(self, id: str, type: str, name: str):
+    def add_node(self, id: str, type: str, name: str, embedding: list[float] | None = None):
         if self.node_exists(id):
             raise ValueError(f"Node with id {id} already exists.")
+        if embedding is not None:
+            self._graph.query(
+                "CREATE (:Entity {id: $id, type: $type, name: $name, "
+                "summary: null, consolidated: false, consolidation_run_id: null, "
+                "created_at: $created_at, embedding: vecf32($embedding)})",
+                {'id': id, 'type': type, 'name': name, 'created_at': _fmt_dt(datetime.now()),
+                 'embedding': embedding}
+            )
+        else:
+            self._graph.query(
+                "CREATE (:Entity {id: $id, type: $type, name: $name, "
+                "summary: null, consolidated: false, consolidation_run_id: null, "
+                "created_at: $created_at})",
+                {'id': id, 'type': type, 'name': name, 'created_at': _fmt_dt(datetime.now())}
+            )
+
+    def update_node_embedding(self, id: str, embedding: list[float]):
         self._graph.query(
-            "CREATE (:Entity {id: $id, type: $type, name: $name, "
-            "summary: null, consolidated: false, consolidation_run_id: null, "
-            "created_at: $created_at})",
-            {'id': id, 'type': type, 'name': name, 'created_at': _fmt_dt(datetime.now())}
+            "MATCH (n:Entity {id: $id}) SET n.embedding = vecf32($embedding)",
+            {'id': id, 'embedding': embedding}
         )
+
+    def find_similar_nodes(self, embedding: list[float], entity_type: str | None = None, k: int = 5) -> list:
+        # The ANN index truncates to its k nearest neighbors *before* any WHERE
+        # filter runs, so a type filter needs a much larger candidate pool
+        # fetched from the index first, or a true same-type match can be
+        # dropped simply because other-typed nodes were embedding-closer.
+        params = {'embedding': embedding}
+        if entity_type is not None:
+            params['fetch_k'] = max(k * 20, 100)
+            params['k'] = k
+            params['entity_type'] = entity_type
+            query = (
+                "CALL db.idx.vector.queryNodes('Entity', 'embedding', $fetch_k, vecf32($embedding)) "
+                "YIELD node, score WHERE node.type = $entity_type "
+                "RETURN node, score ORDER BY score ASC LIMIT $k"
+            )
+        else:
+            params['k'] = k
+            query = (
+                "CALL db.idx.vector.queryNodes('Entity', 'embedding', $k, vecf32($embedding)) "
+                "YIELD node, score RETURN node, score"
+            )
+        result = self._graph.query(query, params)
+        return [(self._node_from_props(r[0].properties), r[1]) for r in result.result_set]
 
     def add_edge(self, source: str, target: str, relation: str, fact: str, valid_from: datetime) -> str:
         result = self._graph.query(

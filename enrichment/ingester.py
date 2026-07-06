@@ -9,11 +9,12 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
     response = extract_entities_and_relations(raw_text, client)
     node_id_mapping = {}
     for node in response.nodes:
-        existing_node_id = resolve_entity(node.name, kg)
+        existing_node_id = resolve_entity(node.name, node.type, kg, client)
         if existing_node_id is None:
             new_id = normalize(node.name).replace(" ", "_")
+            embedding = client.embed(node.name)
             try:
-                kg.add_node(new_id, node.type, node.name)
+                kg.add_node(new_id, node.type, node.name, embedding=embedding)
             except ValueError:
                 pass  # ID collision with a near-duplicate name — reuse existing node
             node_id_mapping[node.name] = new_id

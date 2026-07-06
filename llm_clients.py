@@ -9,6 +9,8 @@ load_dotenv()
 
 _BASE_URL = "https://api.concentrate.ai/v1/responses"
 _MODEL = "claude-haiku-4-5-20251001"
+_EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent"
+_EMBED_DIM = 768
 
 
 class LLMClient:
@@ -16,6 +18,7 @@ class LLMClient:
         self.api_key = os.getenv("CONCENTRATE_AI_API_KEY")
         if not self.api_key:
             raise ValueError("CONCENTRATE_AI_API_KEY not set in environment.")
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
 
     def generate_gemini(self, prompt: str, schema_type: type[BaseModel], max_retries: int = 5):
         schema = schema_type.model_json_schema()
@@ -76,6 +79,37 @@ class LLMClient:
                 resp.raise_for_status()
                 data = resp.json()
                 return data["output"][0]["content"][0]["text"]
+            except (httpx.TimeoutException, httpx.RemoteProtocolError, _TransientError) as e:
+                if attempt < max_retries - 1:
+                    status = e.status if isinstance(e, _TransientError) else type(e).__name__
+                    print(f"Transient error ({status}). Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    raise
+
+
+    def embed(self, text: str, max_retries: int = 5) -> list[float]:
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY not set in environment.")
+
+        payload = {
+            "model": "models/gemini-embedding-001",
+            "content": {"parts": [{"text": text}]},
+            "task_type": "SEMANTIC_SIMILARITY",
+            "output_dimensionality": _EMBED_DIM,
+        }
+        params = {"key": self.gemini_api_key}
+
+        delay = 5
+        for attempt in range(max_retries):
+            try:
+                resp = httpx.post(_EMBED_URL, json=payload, params=params, timeout=120)
+                if resp.status_code in (429, 503):
+                    raise _TransientError(resp.status_code, resp.text)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["embedding"]["values"]
             except (httpx.TimeoutException, httpx.RemoteProtocolError, _TransientError) as e:
                 if attempt < max_retries - 1:
                     status = e.status if isinstance(e, _TransientError) else type(e).__name__

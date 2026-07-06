@@ -45,7 +45,7 @@ def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: st
     second_pass_count = 0
 
     for pending in all_unresolved:
-        target_id = resolve_entity(pending["target"], kg)
+        target_id = resolve_entity(pending["target"], None, kg, client)
         if target_id is None:
             still_unresolved.append(pending)
             continue
