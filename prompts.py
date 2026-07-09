@@ -6,12 +6,12 @@ You must output a single JSON object containing exactly four keys: "nodes", "edg
 
 1. "nodes": A list of objects, where each object represents an entity and MUST contain:
    - "name": The specific name or identifier of the entity as it appears or is inferred from the text.
-   - "type": The category of the entity. MUST be one of: "person" | "service" | "team" | "tool" | "concept"
+   - "type": The category of the entity. MUST be one of: "person" | "service" | "team" | "tool" | "concept" | "event" | "document"
 
 2. "edges": A list of objects, where each object represents a directed relationship and MUST contain:
    - "source": The "name" of the starting node. Must exactly match a "name" in the "nodes" list.
    - "target": The "name" of the ending node. Must exactly match a "name" in the "nodes" list.
-   - "relation": MUST be one of: "MEMBER_OF" | "OWNS" | "DEPENDS_ON" | "USES" | "REPORTED" | "RESOLVED_BY" | "MENTIONED_IN"
+   - "relation": MUST be one of: "MEMBER_OF" | "OWNS" | "DEPENDS_ON" | "USES" | "REPORTED" | "RESOLVED_BY" | "MENTIONED_IN" | "ATTENDED" | "DISCUSSED" | "DECIDED" | "SENT_TO" | "SCHEDULED" | "AUTHORED" | "REFERENCES"
    - "fact": A short, accurate snippet from the text that justifies this relationship.
 
 3. "unmapped_entities": A list of objects for entities that cannot be classified into the allowed types. Each object MUST contain:
@@ -37,8 +37,17 @@ You must output a single JSON object containing exactly four keys: "nodes", "edg
 - **Output format:** Return ONLY a valid JSON object. No conversational filler, no markdown code blocks, no explanations.
 
 ### Allowed Vocabularies
-Node types: person | service | team | tool | concept
-Relation types: MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | MENTIONED_IN
+Node types: person | service | team | tool | concept | event | document
+Relation types: MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | MENTIONED_IN | ATTENDED | DISCUSSED | DECIDED | SENT_TO | SCHEDULED | AUTHORED | REFERENCES
+
+### Relation Type Guide (for calendar/email/docs content)
+- ATTENDED: a person attended a meeting/event (person -> event)
+- DISCUSSED: a person or group talked about a topic/concept in a meeting, email, or doc (source -> concept)
+- DECIDED: a decision was made about something (person/team -> concept, or event -> concept)
+- SENT_TO: a message/email was sent from one person to another (person -> person)
+- SCHEDULED: a person or team scheduled an event (person/team -> event)
+- AUTHORED: a person wrote/created a document (person -> document)
+- REFERENCES: a document or event references another document, tool, or concept (document/event -> concept/tool/document)
 
 ### Example
 Input Text: "Alice joined the infra team last Monday. The infra team owns the auth service, which depends on Postgres. Alice is also the on-call engineer for auth service this week."
