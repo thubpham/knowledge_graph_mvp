@@ -14,26 +14,26 @@
     --panel: #ffffff;
     --panel-soft: #f7f7f5;
     --border: #e9e9e7;
-    --text: #37352f;
-    --text-soft: #787774;
-    --text-faint: #9b9a97;
-    --accent: #2383e2;
-    --accent-soft: #e7f3fe;
+    --text: #35342f;
+    --text-soft: #78766f;
+    --text-faint: #9b988f;
+    --accent: #4a6fa1;
+    --accent-soft: #eaf0f8;
     --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
     --shadow-lg: 0 8px 30px rgba(0,0,0,.10);
     --radius: 12px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #191919;
-      --panel: #202020;
-      --panel-soft: #252525;
-      --border: #2f2f2f;
-      --text: #e9e9e7;
-      --text-soft: #a6a6a3;
-      --text-faint: #6f6f6d;
-      --accent: #5b9bd9;
-      --accent-soft: #1d2b3a;
+      --bg: #17181a;
+      --panel: #1f2022;
+      --panel-soft: #242527;
+      --border: #2c2d2f;
+      --text: #e7e6e2;
+      --text-soft: #a3a19b;
+      --text-faint: #6e6d68;
+      --accent: #7ea3d6;
+      --accent-soft: #1c2837;
       --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 20px rgba(0,0,0,.35);
       --shadow-lg: 0 8px 40px rgba(0,0,0,.5);
     }
@@ -47,7 +47,8 @@
     color: var(--text);
   }
 
-  #cy { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #cy { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  #cy.panning { cursor: grabbing; }
 
   /* ── Top search bar ─────────────────────────────────────────── */
   .topbar {
@@ -134,7 +135,7 @@
     color: var(--text-faint);
     min-height: 16px;
   }
-  #status-bar.error { color: #d1453b; }
+  #status-bar.error { color: #b3564a; }
 
   /* ── Legend ─────────────────────────────────────────────────── */
   .legend {
@@ -207,6 +208,7 @@
   .drawer-head {
     padding: 20px 20px 14px;
     border-bottom: 1px solid var(--border);
+    position: relative;
   }
   .drawer-close {
     position: absolute; top: 16px; right: 16px;
@@ -222,7 +224,9 @@
   .drawer-close:hover { background: var(--panel-soft); color: var(--text); }
 
   .drawer-type {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: .05em;
@@ -232,6 +236,7 @@
     padding: 2px 7px;
     margin-bottom: 8px;
   }
+  .drawer-type .dot { width: 7px; height: 7px; border-radius: 50%; }
   .drawer-title { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; padding-right: 30px; }
   .drawer-summary {
     margin-top: 8px;
@@ -259,8 +264,9 @@
     font-size: 0.82rem;
     line-height: 1.5;
     cursor: pointer;
+    transition: box-shadow .12s;
   }
-  .fact-row:hover { outline: 1px solid var(--accent); }
+  .fact-row:hover { box-shadow: inset 0 0 0 1px var(--accent); }
   .fact-row .frel { color: var(--accent); font-family: ui-monospace, monospace; font-size: 0.72rem; }
   .fact-row .fother { color: var(--text-soft); font-size: 0.72rem; margin-top: 3px; }
 
@@ -329,13 +335,48 @@
     z-index: 50;
     font-size: 0.85rem;
     color: var(--text-faint);
+    transition: opacity .25s;
   }
-  .loading-overlay.hide { display: none; }
+  .loading-overlay.hide { opacity: 0; pointer-events: none; }
+
+  /* ── Breathing halo (focused node) ───────────────────────────── */
+  #node-halo {
+    position: absolute;
+    top: 0; left: 0;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+    z-index: 15;
+  }
+  #node-halo.active { animation: haloBreathe 2.2s ease-in-out infinite; }
+  @keyframes haloBreathe {
+    0%   { transform: translate(-50%, -50%) scale(1);    opacity: .5; }
+    50%  { transform: translate(-50%, -50%) scale(1.45); opacity: .12; }
+    100% { transform: translate(-50%, -50%) scale(1);    opacity: .5; }
+  }
+
+  .note-pill {
+    position: absolute;
+    top: 20px; right: 20px;
+    z-index: 20;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 7px 12px;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    max-width: 220px;
+    line-height: 1.4;
+  }
 </style>
 </head>
 <body>
 
 <div id="cy"></div>
+<div id="node-halo"></div>
 
 <div class="loading-overlay" id="loading">
   <span class="spinner"></span>&nbsp;Loading graph…
@@ -375,32 +416,78 @@
 <script>
 cytoscape.use(cytoscapeFcose);
 
-// ── Type color palette (Notion-muted) ───────────────────────────────────────
-const TYPE_COLORS = {
-  person:       '#4f8ef7',
-  service:      '#2eaa6c',
-  tool:         '#e8a33d',
-  concept:      '#9b7fd4',
-  team:         '#e0679a',
-  organization: '#4bb8c4',
-  event:        '#e0603f',
-  location:     '#8a8a86',
-  website:      '#5b9bd9',
+// ── Type color palette ──────────────────────────────────────────────────
+// Same lightness/chroma across all types, hue rotated — calmer & more
+// cohesive than arbitrary hex picks, while keeping each type legible.
+const TYPE_HUES = {
+  person:       255,
+  service:      165,
+  tool:         55,
+  concept:      295,
+  team:         330,
+  organization: 200,
+  event:        25,
+  location:     0,
+  website:      215,
 };
-const FALLBACK_COLORS = ['#7c9cbf','#c98a5e','#7fae7f','#b08cc9','#c9a15e'];
-let colorIdx = 0;
+let fallbackHueIdx = 0;
+
+// Cytoscape's own style parser doesn't understand CSS oklch() strings — it
+// needs plain hex/rgb. Convert oklch -> sRGB hex ourselves (once, cached)
+// so the palette definition still lives in oklch (shared L/C, hue-rotated)
+// but Cytoscape only ever sees hex.
+function oklchToHex(L, C, Hdeg) {
+  const h = Hdeg * Math.PI / 180;
+  const a = Math.cos(h) * C, b = Math.sin(h) * C;
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  const l = l_ ** 3, m = m_ ** 3, s = s_ ** 3;
+  let r =  4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+  let g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+  let bl = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+  const toSrgb = c => {
+    c = Math.max(0, Math.min(1, c));
+    c = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    return Math.round(Math.max(0, Math.min(1, c)) * 255);
+  };
+  const [R, G, B] = [toSrgb(r), toSrgb(g), toSrgb(bl)];
+  return '#' + [R, G, B].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+const _colorCache = {};
 function colorForType(t) {
-  if (!TYPE_COLORS[t]) {
-    TYPE_COLORS[t] = FALLBACK_COLORS[colorIdx % FALLBACK_COLORS.length];
-    colorIdx++;
+  if (!(t in TYPE_HUES)) {
+    TYPE_HUES[t] = (fallbackHueIdx * 47 + 40) % 360;
+    fallbackHueIdx++;
   }
-  return TYPE_COLORS[t];
+  const key = 'main-' + TYPE_HUES[t];
+  if (!_colorCache[key]) _colorCache[key] = oklchToHex(0.64, 0.10, TYPE_HUES[t]);
+  return _colorCache[key];
+}
+function colorForTypeSoft(t) {
+  const hue = TYPE_HUES[t] ?? 0;
+  const key = 'soft-' + hue;
+  if (!_colorCache[key]) _colorCache[key] = oklchToHex(0.90, 0.03, hue);
+  return _colorCache[key];
+}
+
+// ── Degree-based sizing: hubs read as hubs ────────────────────────────────
+function sizeForDegree(ele) {
+  const deg = ele.data('degree') || 0;
+  const base = ele.data('type') === 'person' ? 18 : 14;
+  return Math.min(base + Math.sqrt(deg) * 7, 34);
+}
+
+// ── Edge confidence -> thickness/opacity: weak facts read as weak ────────
+function edgeConfidence(ele) {
+  const c = parseFloat(ele.data('confidence'));
+  return isNaN(c) ? 0.75 : c;
 }
 
 let cy;
 let allNodes = [];
 let allEdges = [];
-let idleAnim = { running: false, raf: null };
+let physics = null;
 
 // ── Load graph ───────────────────────────────────────────────────────────
 async function loadGraph() {
@@ -409,9 +496,15 @@ async function loadGraph() {
   allNodes = data.nodes;
   allEdges = data.edges;
 
+  const degree = {};
+  allEdges.forEach(e => {
+    degree[e.source] = (degree[e.source] || 0) + 1;
+    degree[e.target] = (degree[e.target] || 0) + 1;
+  });
+
   const elements = [
     ...allNodes.map(n => ({
-      data: { id: n.id, label: n.name, type: n.type, summary: n.summary },
+      data: { id: n.id, label: n.name, type: n.type, summary: n.summary, degree: degree[n.id] || 0 },
     })),
     ...allEdges.map(e => ({
       data: {
@@ -428,60 +521,110 @@ async function loadGraph() {
     minZoom: 0.1,
     maxZoom: 3.5,
     wheelSensitivity: 0.25,
+    // kill Cytoscape's default tap/select overlay halo — this was the
+    // "blue blob" on click. We draw our own crisp ring via .glow instead.
+    selectionType: 'single',
     style: [
       { selector: 'node', style: {
         'background-color': ele => colorForType(ele.data('type')),
         'label': 'data(label)',
         'font-size': 8,
-        'color': 'var(--text-soft)'.startsWith('var') ? '#787774' : '',
+        'color': '#78766f',
         'text-valign': 'bottom',
         'text-margin-y': 4,
-        'width': 16, 'height': 16,
+        'width': ele => sizeForDegree(ele), 'height': ele => sizeForDegree(ele),
         'border-width': 2,
         'border-color': '#ffffff',
-        'border-opacity': 0.7,
-        'transition-property': 'opacity, background-color, width, height, border-width',
-        'transition-duration': 120,
+        'border-opacity': 0.8,
+        'overlay-opacity': 0,
+        'transition-property': 'border-width, border-color, background-color',
+        'transition-duration': 140,
       }},
-      { selector: 'node[type="person"]', style: { 'width': 20, 'height': 20 } },
       { selector: 'edge', style: {
-        'width': 1,
+        'width': ele => 0.6 + edgeConfidence(ele) * 2.2,
         'curve-style': 'bezier',
-        'line-color': '#c9c9c4',
-        'target-arrow-color': '#c9c9c4',
+        'line-color': '#c9c9c3',
+        'target-arrow-color': '#c9c9c3',
         'target-arrow-shape': 'triangle',
         'arrow-scale': 0.6,
-        'opacity': 0.35,
+        'opacity': ele => 0.18 + edgeConfidence(ele) * 0.45,
         'label': '',
-        'font-size': 7,
-        'color': '#9b9a97',
+        'font-size': 7.5,
+        'color': '#6b6a64',
         'text-rotation': 'autorotate',
-        'transition-property': 'opacity, line-color, width',
-        'transition-duration': 120,
+        'text-background-color': 'var(--panel)'.startsWith('var') ? '#fbfbfa' : '',
+        'text-background-opacity': 0,
+        'text-background-padding': 2,
+        'text-background-shape': 'roundrectangle',
+        'overlay-opacity': 0,
+        'transition-property': 'opacity, line-color, width, text-background-opacity',
+        'transition-duration': 140,
       }},
-      { selector: 'node:selected', style: {
-        'border-color': '#2383e2', 'border-width': 3, 'border-opacity': 1,
-      }},
+      // hover: a touch bigger, accent ring — no filled halo
       { selector: '.hover-highlight', style: {
-        'width': 24, 'height': 24, 'border-width': 3, 'border-color': '#2383e2',
+        'width': ele => sizeForDegree(ele) + 6, 'height': ele => sizeForDegree(ele) + 6,
+        'border-width': 3, 'border-color': '#4a6fa1',
       }},
-      { selector: '.edge-label-show', style: { 'label': 'data(relation)' } },
-      { selector: '.dimmed', style: { 'opacity': 0.08 } },
-      { selector: '.glow', style: {
-        'opacity': 1,
-        'line-color': '#2383e2', 'target-arrow-color': '#2383e2', 'width': 2.2,
+      { selector: '.edge-label-show', style: {
+        'label': 'data(relation)', 'opacity': 0.9, 'width': ele => 1.4 + edgeConfidence(ele) * 2,
+        'text-background-opacity': 0.85,
       }},
+      // click / ego-focus: crisp outlined ring around the node, node itself
+      // stays its normal small dot — this replaces the old filled overlay.
       { selector: 'node.glow', style: {
-        'border-color': '#2383e2', 'border-width': 3,
+        'border-width': 3, 'border-color': '#4a6fa1', 'border-opacity': 1,
+        'width': ele => sizeForDegree(ele) + 4, 'height': ele => sizeForDegree(ele) + 4,
       }},
+      { selector: 'edge.glow', style: {
+        'opacity': 1, 'line-color': '#4a6fa1', 'target-arrow-color': '#4a6fa1', 'width': 2,
+      }},
+      { selector: '.dimmed', style: { 'opacity': 0.08 } },
+      { selector: 'node.dimmed', style: { 'opacity': 0.15 } },
     ],
-    layout: { name: 'fcose', animate: false, randomize: true, nodeSeparation: 90, idealEdgeLength: 70 },
+    layout: {
+      name: 'fcose', animate: false, randomize: true,
+      nodeSeparation: 90, idealEdgeLength: 70,
+      // don't grid-pack disconnected components — this was the "isolated
+      // nodes line up in a square" bug. We also scatter them explicitly
+      // below for nodes so sparse they're components of size 1.
+      packComponents: false,
+    },
   });
+
+  // scatter true isolates (degree 0) loosely across the whole canvas,
+  // among the connected cluster, instead of leaving them wherever the
+  // layout happened to drop them.
+  scatterIsolatedNodes();
 
   document.getElementById('loading').classList.add('hide');
   buildLegend();
   attachInteractions();
-  startIdleMotion();
+  initHalo();
+  physics = new GraphPhysics(cy);
+  physics.start();
+}
+
+function scatterIsolatedNodes() {
+  const isolates = cy.nodes().filter(n => n.degree() === 0);
+  if (!isolates.length) return;
+  const connected = cy.nodes().filter(n => n.degree() > 0);
+  const bb = connected.length ? connected.boundingBox() : { x1: -200, y1: -200, x2: 200, y2: 200 };
+  const w = Math.max(bb.x2 - bb.x1, 300);
+  const h = Math.max(bb.y2 - bb.y1, 300);
+  const cx = (bb.x1 + bb.x2) / 2, cy0 = (bb.y1 + bb.y2) / 2;
+  const placed = [];
+  isolates.forEach(n => {
+    let pos, tries = 0;
+    do {
+      pos = {
+        x: cx + (Math.random() - 0.5) * w * 1.5,
+        y: cy0 + (Math.random() - 0.5) * h * 1.5,
+      };
+      tries++;
+    } while (placed.some(p => Math.hypot(p.x - pos.x, p.y - pos.y) < 60) && tries < 30);
+    placed.push(pos);
+    n.position(pos);
+  });
 }
 
 // ── Legend ───────────────────────────────────────────────────────────────
@@ -498,51 +641,150 @@ document.getElementById('legend-toggle').onclick = () => {
   document.getElementById('legend').classList.toggle('open');
 };
 
-// ── Idle "alive" drift ─────────────────────────────────────────────────────
-function startIdleMotion() {
-  const nodes = cy.nodes();
-  nodes.forEach(n => {
-    const p = n.position();
-    n.data('_home', { x: p.x, y: p.y });
-    n.data('_phase', Math.random() * Math.PI * 2);
-    n.data('_speed', 0.4 + Math.random() * 0.4);
-    n.data('_amp', 1.5 + Math.random() * 2);
-  });
-
-  let t = 0;
-  let last = performance.now();
-  function tick(now) {
-    const dt = (now - last) / 1000;
-    last = now;
-    t += dt;
-    if (!cy.$(':grabbed').length && !document.hidden) {
-      cy.batch(() => {
-        nodes.forEach(n => {
-          if (n.grabbed() || n.locked()) return;
-          const home = n.data('_home');
-          const phase = n.data('_phase');
-          const speed = n.data('_speed');
-          const amp = n.data('_amp');
-          n.position({
-            x: home.x + Math.sin(t * speed + phase) * amp,
-            y: home.y + Math.cos(t * speed * 0.8 + phase) * amp,
-          });
-        });
-      });
-    }
-    idleAnim.raf = requestAnimationFrame(tick);
+// ═══════════════════════════════════════════════════════════════════════
+// GraphPhysics — mass-spring simulation: stronger idle drift + bouncy
+// contact collisions.
+//
+// Every non-grabbed node is a damped spring pulling toward its drift
+// target (home + a sine wander). Overlap between two nodes applies a
+// contact-only repulsion force (no force at a distance — that was the
+// "magnets" complaint). Because the spring is underdamped, a node that
+// gets shoved settles with a couple of visible overshoot wobbles instead
+// of just stopping dead — that's the "bouncy" feel. The node you're
+// actually dragging is driven directly by Cytoscape; everything else
+// reacts to it each frame.
+// ═══════════════════════════════════════════════════════════════════════
+class GraphPhysics {
+  constructor(cy) {
+    this.cy = cy;
+    this.nodes = cy.nodes();
+    this.raf = null;
+    this.t = 0;
+    this.last = performance.now();
+    this._init();
+    this._bindDrag();
   }
-  idleAnim.raf = requestAnimationFrame(tick);
 
-  // re-anchor home position after manual drag
-  cy.on('dragfree', 'node', evt => {
-    const n = evt.target;
-    const p = n.position();
-    n.data('_home', { x: p.x, y: p.y });
-  });
+  _init() {
+    this.nodes.forEach(n => {
+      const p = n.position();
+      n.scratch('_home', { x: p.x, y: p.y });
+      n.scratch('_phase', Math.random() * Math.PI * 2);
+      n.scratch('_speed', 0.4 + Math.random() * 0.35);   // stronger drift
+      n.scratch('_amp', 4 + Math.random() * 4.5);          // stronger drift
+      n.scratch('_vel', { x: 0, y: 0 });
+    });
+  }
+
+  _bindDrag() {
+    this.cy.on('dragfree', 'node', evt => {
+      const n = evt.target;
+      const p = n.position();
+      n.scratch('_home', { x: p.x, y: p.y });
+      n.scratch('_vel', { x: 0, y: 0 });
+    });
+  }
+
+  start() {
+    const tick = (now) => {
+      const dt = Math.min((now - this.last) / 1000, 0.032);
+      this.last = now;
+      this.t += dt;
+      if (!document.hidden) this._step(dt);
+      this.raf = requestAnimationFrame(tick);
+    };
+    this.raf = requestAnimationFrame(tick);
+  }
+
+  _step(dt) {
+    const arr = this.nodes;
+    const n = arr.length;
+    const K_SPRING = 70;     // pull toward drift target/home
+    const DAMPING = 6;       // < critical → slight overshoot, i.e. bounce
+    const K_REPEL = 1100;    // contact-only collision push
+    const MAX_SPEED = 420;
+
+    const positions = new Array(n);
+    for (let i = 0; i < n; i++) positions[i] = arr[i].position();
+
+    const forces = new Array(n);
+    for (let i = 0; i < n; i++) forces[i] = { x: 0, y: 0 };
+
+    for (let i = 0; i < n; i++) {
+      const node = arr[i];
+      if (node.grabbed()) continue;
+      const home = node.scratch('_home');
+      const phase = node.scratch('_phase');
+      const speed = node.scratch('_speed');
+      const amp = node.scratch('_amp');
+      const tgt = {
+        x: home.x + Math.sin(this.t * speed + phase) * amp,
+        y: home.y + Math.cos(this.t * speed * 0.85 + phase) * amp,
+      };
+      forces[i].x += K_SPRING * (tgt.x - positions[i].x);
+      forces[i].y += K_SPRING * (tgt.y - positions[i].y);
+    }
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const pi = positions[i], pj = positions[j];
+        const ri = arr[i].width() / 2 + 3, rj = arr[j].width() / 2 + 3;
+        const minDist = ri + rj + 14;
+        let dx = pj.x - pi.x, dy = pj.y - pi.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < 0.001) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dist = 1; }
+        if (dist < minDist) {
+          const overlap = (minDist - dist) / dist;
+          const fx = dx * overlap * K_REPEL, fy = dy * overlap * K_REPEL;
+          if (!arr[i].grabbed()) { forces[i].x -= fx; forces[i].y -= fy; }
+          if (!arr[j].grabbed()) { forces[j].x += fx; forces[j].y += fy; }
+        }
+      }
+    }
+
+    this.cy.batch(() => {
+      for (let i = 0; i < n; i++) {
+        const node = arr[i];
+        if (node.grabbed() || node.locked()) continue;
+        const vel = node.scratch('_vel');
+        vel.x += (forces[i].x - DAMPING * vel.x) * dt;
+        vel.y += (forces[i].y - DAMPING * vel.y) * dt;
+        const sp = Math.hypot(vel.x, vel.y);
+        if (sp > MAX_SPEED) { vel.x *= MAX_SPEED / sp; vel.y *= MAX_SPEED / sp; }
+        node.position({ x: positions[i].x + vel.x * dt, y: positions[i].y + vel.y * dt });
+      }
+    });
+  }
 }
 
-// ── Interactions ─────────────────────────────────────────────────────────
+// ── Breathing halo on the focused node ──────────────────────────────────
+// A DOM ring synced to the node's rendered (screen) position every frame,
+// so it tracks pan/zoom/drift perfectly — not a filled overlay, just a
+// slow pulsing outline drawing the eye to whichever single node you
+// clicked into.
+let haloNode = null;
+function initHalo() {
+  cy.on('render', updateHaloPosition);
+}
+function setHaloTarget(node) {
+  haloNode = node && node.length ? node : null;
+  const el = document.getElementById('node-halo');
+  el.classList.toggle('active', !!haloNode);
+  if (!haloNode) el.style.opacity = 0;
+  updateHaloPosition();
+}
+function updateHaloPosition() {
+  const el = document.getElementById('node-halo');
+  if (!haloNode || !haloNode.length || !haloNode.inside()) return;
+  const rp = haloNode.renderedPosition();
+  const size = Math.max(haloNode.renderedWidth(), haloNode.renderedHeight()) * 1.9;
+  el.style.left = rp.x + 'px';
+  el.style.top = rp.y + 'px';
+  el.style.width = size + 'px';
+  el.style.height = size + 'px';
+}
+
+// ── Interactions ───────────────────────────────────────────────
 function attachInteractions() {
   cy.on('mouseover', 'node', evt => {
     const n = evt.target;
@@ -574,7 +816,7 @@ async function openNodeDrawer(id) {
   const resp = await fetch(`/node/${encodeURIComponent(id)}`);
   const d = await resp.json();
 
-  document.getElementById('drawer-type').textContent = d.type;
+  document.getElementById('drawer-type').innerHTML = `<span class="dot" style="background:${colorForType(d.type)}"></span>${d.type}`;
   document.getElementById('drawer-title').textContent = d.name;
   document.getElementById('drawer-summary').textContent = d.summary || 'No summary yet.';
 
@@ -590,7 +832,7 @@ async function openNodeDrawer(id) {
   const inHtml = d.incoming.length
     ? d.incoming.map(e => factRow(e, e.source, '←')).join('')
     : '<div class="empty-note">No incoming facts.</div>';
-  const epHtml = d.episodes.length
+  const epHtml = (d.episodes || []).length
     ? d.episodes.map(ep => `
         <div class="fact-row" style="cursor:default">
           <div>${esc(ep.text.slice(0, 160))}${ep.text.length > 160 ? '…' : ''}</div>
@@ -631,6 +873,10 @@ function openEdgeDrawer(e) {
   document.querySelectorAll('#drawer-body .fact-row[data-node]').forEach(row => {
     row.onclick = () => openNodeDrawer(row.dataset.node);
   });
+  clearHighlight();
+  const els = cy.$(`#${cySafeId(e.source)}`).union(cy.$(`#${cySafeId(e.target)}`)).union(cy.$(`#${cySafeId(e.id)}`));
+  cy.elements().addClass('dimmed');
+  els.removeClass('dimmed').addClass('glow');
 }
 
 document.getElementById('drawer-close').onclick = closeDrawer;
@@ -646,11 +892,13 @@ function focusEgo(id) {
   clearHighlight();
   cy.elements().addClass('dimmed');
   ego.removeClass('dimmed').addClass('glow');
+  setHaloTarget(node);
   cy.animate({ fit: { eles: ego, padding: 80 } }, { duration: 300 });
 }
 
 function clearHighlight() {
   cy.elements().removeClass('dimmed').removeClass('glow');
+  setHaloTarget(null);
 }
 
 // ── Reset ────────────────────────────────────────────────────────────────
@@ -796,6 +1044,26 @@ async function runQuery() {
   showAnswer(data.answer, data.results);
 }
 
+// Chain the (possibly unordered) result edges into a walkable path where
+// consecutive edges share an endpoint, so the reveal below can travel hop
+// by hop instead of lighting every edge at once. Leftover, unconnected
+// edges are appended and still get revealed, just without a "from" hop.
+function buildChain(results) {
+  if (results.length <= 1) return results.slice();
+  const remaining = results.slice();
+  const chain = [remaining.shift()];
+  let extended = true;
+  while (extended && remaining.length) {
+    extended = false;
+    const last = chain[chain.length - 1];
+    const idx = remaining.findIndex(e =>
+      e.source === last.target || e.target === last.target ||
+      e.source === last.source || e.target === last.source);
+    if (idx !== -1) { chain.push(remaining.splice(idx, 1)[0]); extended = true; }
+  }
+  return chain.concat(remaining);
+}
+
 function highlightResults(results) {
   clearHighlight();
   cy.elements().addClass('dimmed');
@@ -803,12 +1071,27 @@ function highlightResults(results) {
   results.forEach(r => touched.add(r.source));
   results.forEach(r => touched.add(r.target));
   const nodeSel = [...touched].map(id => `#${cySafeId(id)}`).join(',');
-  const nodes = cy.$(nodeSel);
-  const edges = cy.$(results.map(r => `#${cySafeId(r.id)}`).join(','));
-  nodes.removeClass('dimmed').addClass('glow');
-  edges.removeClass('dimmed').addClass('glow').addClass('edge-label-show');
-  const collection = nodes.union(edges);
+  const collection = cy.$(nodeSel).union(cy.$(results.map(r => `#${cySafeId(r.id)}`).join(',')));
   if (collection.length) cy.animate({ fit: { eles: collection, padding: 100 } }, { duration: 350 });
+
+  // reveal hop by hop, each edge sending a brief traveling dash-pulse as
+  // it lights up, instead of the whole path snapping on simultaneously
+  const chain = buildChain(results);
+  chain.forEach((r, i) => {
+    setTimeout(() => {
+      const edgeEl = cy.$(`#${cySafeId(r.id)}`);
+      const srcEl = cy.$(`#${cySafeId(r.source)}`);
+      const tgtEl = cy.$(`#${cySafeId(r.target)}`);
+      srcEl.removeClass('dimmed').addClass('glow');
+      tgtEl.removeClass('dimmed').addClass('glow');
+      edgeEl.removeClass('dimmed').addClass('glow').addClass('edge-label-show');
+      edgeEl.style({ 'line-style': 'dashed', 'line-dash-pattern': [8, 6], 'line-dash-offset': 0 });
+      edgeEl.animate(
+        { style: { 'line-dash-offset': -28 } },
+        { duration: 420, easing: 'ease-out', complete: () => edgeEl.style({ 'line-style': 'solid' }) }
+      );
+    }, i * 260);
+  });
 }
 
 function cySafeId(id) {
