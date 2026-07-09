@@ -10,10 +10,10 @@ from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-_DIR = Path(__file__).parent
-CREDENTIALS_PATH = _DIR / "credentials.json"
-TOKEN_PATH = _DIR / "gmail_token.json"
-LAST_FETCHED_PATH = Path(__file__).parent.parent / "gmail_last_fetched.json"
+_LOCAL_DIR = Path(__file__).parent.parent.parent / ".local"
+CREDENTIALS_PATH = _LOCAL_DIR / "sources" / "credentials.json"
+TOKEN_PATH = _LOCAL_DIR / "sources" / "gmail_token.json"
+LAST_FETCHED_PATH = _LOCAL_DIR / "gmail_last_fetched.json"
 
 MIN_WORDS = 20
 

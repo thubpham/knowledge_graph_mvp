@@ -10,10 +10,10 @@ from googleapiclient.errors import HttpError
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
-_DIR = Path(__file__).parent
-CREDENTIALS_PATH = _DIR / "credentials.json"
-TOKEN_PATH = _DIR / "gdocs_token.json"
-LAST_FETCHED_PATH = Path(__file__).parent.parent / "gdocs_last_fetched.json"
+_LOCAL_DIR = Path(__file__).parent.parent.parent / ".local"
+CREDENTIALS_PATH = _LOCAL_DIR / "sources" / "credentials.json"
+TOKEN_PATH = _LOCAL_DIR / "sources" / "gdocs_token.json"
+LAST_FETCHED_PATH = _LOCAL_DIR / "gdocs_last_fetched.json"
 
 MIN_WORDS = 20
 DOC_MIME_TYPE = "application/vnd.google-apps.document"

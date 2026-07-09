@@ -2,9 +2,7 @@
 __pycache__/
 *.pyc
 .DS_Store
-data/sources/credentials.json
-data/sources/token.json
-data/sources/gmail_token.json
-data/sources/gdocs_token.json
-data/*_last_fetched.json
-pending_edges.txt
+
+# All personal/runtime state: OAuth tokens & credentials, sync watermarks,
+# ingestion logs, and local-only docs (SOURCES.md, IMPROVEMENTS.md).
+.local/

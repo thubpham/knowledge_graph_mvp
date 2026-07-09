@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
@@ -38,4 +38,4 @@ _run_source("Google Docs", ingest_gdocs_documents)
 print()
 _run_source("Claude Code Sessions", ingest_claude_sessions)
 
-print("\nDone. Run `python run_consolidation.py` next.")
+print("\nDone. Run `python scripts/run_consolidation.py` next.")

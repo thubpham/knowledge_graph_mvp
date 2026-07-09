@@ -1,13 +1,16 @@
 import time
 from datetime import datetime
+from pathlib import Path
 
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
 from enrichment.resolver import resolve_entity
 from .consolidate import consolidate
 
+_PENDING_EDGES_PATH = Path(__file__).parent.parent / ".local" / "pending_edges.txt"
 
-def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: str = "pending_edges.txt"):
+
+def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: Path = _PENDING_EDGES_PATH):
     all_unresolved = []
     consolidated_count = 0
     error_count = 0

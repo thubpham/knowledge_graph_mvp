@@ -10,10 +10,10 @@ from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
-_DIR = Path(__file__).parent
-CREDENTIALS_PATH = _DIR / "credentials.json"
-TOKEN_PATH = _DIR / "token.json"
-LAST_FETCHED_PATH = Path(__file__).parent.parent / "gcal_last_fetched.json"
+_LOCAL_DIR = Path(__file__).parent.parent.parent / ".local"
+CREDENTIALS_PATH = _LOCAL_DIR / "sources" / "credentials.json"
+TOKEN_PATH = _LOCAL_DIR / "sources" / "token.json"
+LAST_FETCHED_PATH = _LOCAL_DIR / "gcal_last_fetched.json"
 
 MIN_WORDS = 20
 
