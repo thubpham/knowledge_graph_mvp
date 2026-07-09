@@ -11,6 +11,7 @@ def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient) -> dict:
     documents = fetch_gdocs_documents()
     ingested = 0
     skipped_dedup = 0
+    errors = 0
 
     total = len(documents)
     for i, doc in enumerate(documents, 1):
@@ -24,23 +25,28 @@ def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient) -> dict:
         print(f"[{i}/{total}] Ingesting '{doc['title']}'...")
         reference_time = datetime.fromisoformat(doc["modified_time"])
 
-        episode_id = ingest_episode(
-            raw_text=doc["plain_text_content"],
-            reference_time=reference_time,
-            client=client,
-            kg=kg,
-        )
+        try:
+            episode_id = ingest_episode(
+                raw_text=doc["plain_text_content"],
+                reference_time=reference_time,
+                client=client,
+                kg=kg,
+            )
 
-        kg.update_episode(
-            episode_id,
-            source_type="gdocs_document",
-            source_id=document_id,
-            metadata=json.dumps({
-                "url": doc["url"],
-                "title": doc["title"],
-                "owner": doc["owner"],
-            }),
-        )
+            kg.update_episode(
+                episode_id,
+                source_type="gdocs_document",
+                source_id=document_id,
+                metadata=json.dumps({
+                    "url": doc["url"],
+                    "title": doc["title"],
+                    "owner": doc["owner"],
+                }),
+            )
+        except Exception as e:
+            errors += 1
+            print(f"  → error, skipped: {e}")
+            continue
 
         ingested += 1
 
@@ -48,4 +54,5 @@ def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient) -> dict:
         "total_fetched": len(documents),
         "ingested": ingested,
         "skipped_dedup": skipped_dedup,
+        "errors": errors,
     }

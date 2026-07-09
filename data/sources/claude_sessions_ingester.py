@@ -11,6 +11,7 @@ def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient) -> dict:
     sessions = fetch_claude_sessions()
     ingested = 0
     skipped_dedup = 0
+    errors = 0
 
     total = len(sessions)
     for i, session in enumerate(sessions, 1):
@@ -24,21 +25,26 @@ def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient) -> dict:
         print(f"[{i}/{total}] Ingesting '{session['title']}'...")
         reference_time = datetime.fromisoformat(session["session_time"])
 
-        episode_id = ingest_episode(
-            raw_text=session["plain_text_content"],
-            reference_time=reference_time,
-            client=client,
-            kg=kg,
-        )
+        try:
+            episode_id = ingest_episode(
+                raw_text=session["plain_text_content"],
+                reference_time=reference_time,
+                client=client,
+                kg=kg,
+            )
 
-        kg.update_episode(
-            episode_id,
-            source_type="claude_code_session",
-            source_id=session_id,
-            metadata=json.dumps({
-                "title": session["title"],
-            }),
-        )
+            kg.update_episode(
+                episode_id,
+                source_type="claude_code_session",
+                source_id=session_id,
+                metadata=json.dumps({
+                    "title": session["title"],
+                }),
+            )
+        except Exception as e:
+            errors += 1
+            print(f"  → error, skipped: {e}")
+            continue
 
         ingested += 1
 
@@ -46,4 +52,5 @@ def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient) -> dict:
         "total_fetched": len(sessions),
         "ingested": ingested,
         "skipped_dedup": skipped_dedup,
+        "errors": errors,
     }

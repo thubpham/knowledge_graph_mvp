@@ -49,7 +49,11 @@ def _load_last_fetched() -> str | None:
     return None
 
 
-def _save_last_fetched(ts: str):
+def save_last_fetched(ts: str):
+    """Called by the ingester only after a page's episode is durably written —
+    advancing this on fetch alone would silently drop any page whose ingestion
+    fails (e.g. an LLM extraction error), since Notion's search API never
+    returns pages older than the cursor again."""
     LAST_FETCHED_PATH.write_text(json.dumps({"last_fetched": ts}))
 
 
@@ -120,7 +124,7 @@ def _search_pages(token: str, last_fetched: str | None) -> list[dict]:
     return pages
 
 
-def fetch_notion_pages(token: str | None = None) -> list[dict]:
+def fetch_notion_pages(token: str | None = None) -> tuple[list[dict], str]:
     token = token or os.getenv("NOTION_API_KEY")
     if not token:
         raise ValueError("NOTION_API_KEY not set in environment or .env")
@@ -153,6 +157,5 @@ def fetch_notion_pages(token: str | None = None) -> list[dict]:
         })
         print(f"  Fetched '{title}' ({word_count} words)")
 
-    _save_last_fetched(fetch_started_at)
     print(f"Done. {len(qualifying)} qualifying pages fetched.")
-    return qualifying
+    return qualifying, fetch_started_at
