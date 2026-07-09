@@ -10,7 +10,10 @@ kg = KnowledgeGarden()
 client = LLMClient()
 
 nodes = kg.get_all_nodes()
-pending = [n for n in nodes if not n.consolidated]
+pending = [
+    n for n in nodes
+    if n.last_episode_at and (n.last_consolidated_at is None or n.last_episode_at > n.last_consolidated_at)
+]
 print(f"Nodes total: {len(nodes)} | Pending consolidation: {len(pending)}\n")
 
 result = consolidate_all(kg, client)

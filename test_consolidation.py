@@ -31,7 +31,7 @@ print(f"Result: {result}")
 print("\n=== Node summaries after consolidation ===")
 for node in kg.get_all_nodes():
     if node.summary:
-        print(f"\n[{node.name}]\n  summary: {node.summary}\n  consolidated: {node.consolidated}")
+        print(f"\n[{node.name}]\n  summary: {node.summary}\n  last_consolidated_at: {node.last_consolidated_at}")
 
 print("\n=== All edges after consolidation ===")
 for edge in kg.get_all_edges():

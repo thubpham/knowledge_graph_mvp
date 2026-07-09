@@ -12,7 +12,10 @@ def consolidate_all(kg: KnowledgeGarden, client: LLMClient, pending_log_path: st
     consolidated_count = 0
     error_count = 0
 
-    pending = [n for n in kg.get_all_nodes() if not n.consolidated]
+    pending = [
+        n for n in kg.get_all_nodes()
+        if n.last_episode_at and (n.last_consolidated_at is None or n.last_episode_at > n.last_consolidated_at)
+    ]
     total = len(pending)
     print(f"Consolidating {total} entities...")
     start = time.monotonic()

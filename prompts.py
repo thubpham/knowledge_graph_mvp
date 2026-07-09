@@ -161,40 +161,46 @@ Instructions:
 CONSOLIDATION_PROMPT = """
 You are consolidating episodic memory about an entity into semantic knowledge.
 
-You will be given an entity and a chronological list of raw episodes that mention it. Your task is to synthesize across ALL episodes — not summarize each one individually — and determine what is durably, currently true about this entity.
+You will be given an entity, its existing semantic summary (from prior consolidation runs, if any), and a chronological list of NEW raw episodes that mention it since the last consolidation. Your task is to UPDATE the existing summary in light of the new episodes — not re-derive it from scratch — and determine what is durably, currently true about this entity.
 
 ### Entity
 {entity_name}
 
-### Raw Episodes (ordered oldest to newest)
+### Existing Summary (from prior consolidation; may be "None yet" if this is the first run)
+{existing_summary}
+
+### New Raw Episodes Since Last Consolidation (ordered oldest to newest)
 {episodes}
 
 ### Instructions
-1. Read all episodes in order. Pay attention to changes over time — if a later episode contradicts or supersedes an earlier one (e.g. a role change, a relationship ending), your summary must reflect the CURRENT state, not just concatenate everything as if it's all still true.
-2. Identify facts that are persistent or recurring — these should be promoted to permanent semantic facts.
-3. Identify facts that appear only once, are incidental, or are too specific/transient to be a standing fact about the entity — these stay episodic and should NOT be promoted.
-4. Do not invent or infer facts beyond what the episodes state or directly imply.
+1. Treat the Existing Summary as already-established durable fact. Read the New Raw Episodes in order and merge them into it.
+2. Pay attention to changes over time — if a new episode contradicts or supersedes the existing summary or an earlier new episode (e.g. a role change, a relationship ending), your updated summary must reflect the CURRENT state, not just concatenate everything as if it's all still true.
+3. Identify facts from the NEW episodes that are persistent or recurring — these should be promoted to permanent semantic facts. Only emit semantic_edges for facts learned from the new episodes (facts already captured in the Existing Summary do not need a new edge unless they changed).
+4. Identify facts from the NEW episodes that appear only once, are incidental, or are too specific/transient to be a standing fact — these stay episodic and should NOT be promoted.
+5. Do not invent or infer facts beyond what the existing summary or new episodes state or directly imply.
 
 ### Output Format
 Return ONLY a valid JSON object with these keys:
 
-1. "summary": A 2-3 sentence semantic summary of what is persistently true about this entity, reflecting its current state.
+1. "summary": A 2-3 sentence semantic summary of what is persistently true about this entity, reflecting its current state after merging in the new episodes.
 
-2. "semantic_edges": A list of objects for facts that should become permanent graph edges. Each object MUST contain:
+2. "semantic_edges": A list of objects for NEW or CHANGED facts (from the new episodes) that should become permanent graph edges. Each object MUST contain:
    - "relation": MUST be one of: "MEMBER_OF" | "OWNS" | "DEPENDS_ON" | "USES" | "REPORTED" | "RESOLVED_BY"
    - "target": the name of the other entity in this relationship, as it appears in the episodes
    - "fact": a short justification snippet, in your own words, for why this is a durable fact
 
-3. "episodic_only": A list of short strings describing facts that were mentioned but should NOT be promoted to semantic edges (one-off details, transient context).
+3. "episodic_only": A list of short strings describing facts from the new episodes that were mentioned but should NOT be promoted to semantic edges (one-off details, transient context).
 
 ### Example
 
 Entity: alice
 
-Raw Episodes (ordered oldest to newest):
-1. "alice joined the infra team last Monday."
-2. "alice mentioned she's grabbing coffee with bob before the standup."
-3. "alice left the infra team and joined the platform team this week. she's now leading the payments migration."
+Existing Summary (from prior consolidation; may be "None yet" if this is the first run):
+Alice is a member of the infra team.
+
+New Raw Episodes Since Last Consolidation (ordered oldest to newest):
+1. "alice mentioned she's grabbing coffee with bob before the standup."
+2. "alice left the infra team and joined the platform team this week. she's now leading the payments migration."
 
 Output:
 {
@@ -210,7 +216,9 @@ Output:
 
 ### Current Task
 Entity: {entity_name}
-Raw Episodes (ordered oldest to newest):
+Existing Summary (from prior consolidation; may be "None yet" if this is the first run):
+{existing_summary}
+New Raw Episodes Since Last Consolidation (ordered oldest to newest):
 {episodes}
 
 Output:

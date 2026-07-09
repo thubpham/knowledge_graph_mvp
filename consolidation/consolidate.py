@@ -14,11 +14,10 @@ def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
     if not kg.node_exists(entity_id):
         raise ValueError(f"Node with id {entity_id} does not exist.")
 
-    episodes = get_episode_for_entity(entity_id, kg)
+    node = kg.get_node(entity_id)
+    episodes = get_episode_for_entity(entity_id, kg, since=node.last_consolidated_at)
     if not episodes:
         return None
-
-    node = kg.get_node(entity_id)
 
     episodes_text = "\n".join(
         f'{i+1}. "{ep.text}"' for i, ep in enumerate(episodes)
@@ -27,6 +26,7 @@ def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
     prompt = (
         CONSOLIDATION_PROMPT
         .replace("{entity_name}", node.name)
+        .replace("{existing_summary}", node.summary or "None yet — this is the first consolidation.")
         .replace("{episodes}", episodes_text)
     )
 
@@ -36,7 +36,7 @@ def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
     run_id = str(uuid.uuid4())
     kg.update_node(entity_id,
         summary=result.summary,
-        consolidated=True,
+        last_consolidated_at=datetime.now().isoformat(),
         consolidation_run_id=run_id,
     )
 

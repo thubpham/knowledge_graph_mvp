@@ -50,7 +50,8 @@ class KnowledgeGarden:
     def _node_from_props(self, props: dict) -> Node:
         node = Node(props['id'], props['type'], props['name'])
         node.summary = props.get('summary')
-        node.consolidated = props.get('consolidated', False)
+        node.last_episode_at = _parse_dt(props.get('last_episode_at'))
+        node.last_consolidated_at = _parse_dt(props.get('last_consolidated_at'))
         node.consolidation_run_id = props.get('consolidation_run_id')
         node.created_at = _parse_dt(props.get('created_at'))
         return node
@@ -93,7 +94,7 @@ class KnowledgeGarden:
         if embedding is not None:
             self._graph.query(
                 "CREATE (:Entity {id: $id, type: $type, name: $name, "
-                "summary: null, consolidated: false, consolidation_run_id: null, "
+                "summary: null, last_episode_at: null, last_consolidated_at: null, consolidation_run_id: null, "
                 "created_at: $created_at, embedding: vecf32($embedding)})",
                 {'id': id, 'type': type, 'name': name, 'created_at': _fmt_dt(datetime.now()),
                  'embedding': embedding}
@@ -101,7 +102,7 @@ class KnowledgeGarden:
         else:
             self._graph.query(
                 "CREATE (:Entity {id: $id, type: $type, name: $name, "
-                "summary: null, consolidated: false, consolidation_run_id: null, "
+                "summary: null, last_episode_at: null, last_consolidated_at: null, consolidation_run_id: null, "
                 "created_at: $created_at})",
                 {'id': id, 'type': type, 'name': name, 'created_at': _fmt_dt(datetime.now())}
             )
@@ -275,12 +276,20 @@ class KnowledgeGarden:
         )
         return [self._edge_from_props(r[0].properties) for r in result.result_set]
 
-    def get_episodes_for_entity(self, entity_id: str) -> list:
-        result = self._graph.query(
-            "MATCH ({id: $entity_id})-[e:EDGE {relation: 'MENTIONED_IN'}]->(ep:Episode) "
-            "RETURN ep ORDER BY ep.reference_time",
-            {'entity_id': entity_id}
-        )
+    def get_episodes_for_entity(self, entity_id: str, since: datetime | None = None) -> list:
+        if since is not None:
+            result = self._graph.query(
+                "MATCH ({id: $entity_id})-[e:EDGE {relation: 'MENTIONED_IN'}]->(ep:Episode) "
+                "WHERE ep.reference_time > $since "
+                "RETURN ep ORDER BY ep.reference_time",
+                {'entity_id': entity_id, 'since': _fmt_dt(since)}
+            )
+        else:
+            result = self._graph.query(
+                "MATCH ({id: $entity_id})-[e:EDGE {relation: 'MENTIONED_IN'}]->(ep:Episode) "
+                "RETURN ep ORDER BY ep.reference_time",
+                {'entity_id': entity_id}
+            )
         return [self._episode_from_props(r[0].properties) for r in result.result_set]
 
     def get_episode_by_source(self, source_id: str) -> Episode | None:

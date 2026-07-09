@@ -10,7 +10,8 @@ class Node:
         self.summary = None
         self.embeddings = None
         self.created_at = datetime.now() or None
-        self.consolidated = False 
+        self.last_episode_at = None
+        self.last_consolidated_at = None
         self.consolidation_run_id = None
 
 class Edge: 

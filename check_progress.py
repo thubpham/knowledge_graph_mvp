@@ -8,8 +8,12 @@ kg = KnowledgeGarden()
 nodes = kg.get_all_nodes()
 
 total = len(nodes)
-done = sum(1 for n in nodes if n.consolidated)
-pending = total - done
+pending_nodes = [
+    n for n in nodes
+    if n.last_episode_at and (n.last_consolidated_at is None or n.last_episode_at > n.last_consolidated_at)
+]
+pending = len(pending_nodes)
+done = total - pending
 pct = (done / total * 100) if total else 0
 
 bar_width = 30
