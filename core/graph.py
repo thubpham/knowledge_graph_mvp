@@ -228,6 +228,14 @@ class KnowledgeGarden:
         )
         return [self._node_from_props(r[0].properties) for r in result.result_set]
 
+    def get_recently_active_nodes(self, before: datetime, limit: int = 30) -> list:
+        result = self._graph.query(
+            "MATCH (n:Entity) WHERE n.last_episode_at IS NOT NULL AND n.last_episode_at < $before "
+            "RETURN n ORDER BY n.last_episode_at DESC LIMIT $limit",
+            {"before": _fmt_dt(before), "limit": limit},
+        )
+        return [self._node_from_props(r[0].properties) for r in result.result_set]
+
     def get_episode(self, id: str) -> Episode:
         result = self._graph.query(
             "MATCH (ep:Episode {id: $id}) RETURN ep", {'id': id}

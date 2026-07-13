@@ -56,7 +56,14 @@ def _log_unmapped(response: ExtractionResult, episode_id: str, reference_time: d
 
 def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, kg: KnowledgeGarden):
     episode = Episode(raw_text, reference_time = reference_time)
-    chunk_results = [extract_entities_and_relations(chunk, client) for chunk in chunk_text(raw_text)]
+    known_entities = [
+        f"{node.name} ({node.type})"
+        for node in kg.get_recently_active_nodes(before=reference_time)
+    ]
+    chunk_results = [
+        extract_entities_and_relations(chunk, client, known_entities=known_entities)
+        for chunk in chunk_text(raw_text)
+    ]
     response = _merge_extractions(chunk_results)
     node_id_mapping = {}
     for node in response.nodes:

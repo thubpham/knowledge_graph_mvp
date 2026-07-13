@@ -32,7 +32,7 @@ You must output a single JSON object containing exactly four keys: "nodes", "edg
 - **Relation constraint:** Every relation MUST be one of the allowed relation types. If it cannot be mapped, do NOT include it in "edges" — put it in "unmapped_relations" instead. The source and target nodes should still appear in "nodes" if they have other valid edges or can be typed.
 - **Entity consistency:** The "source" and "target" strings in "edges" must exactly match "name" strings in "nodes" (case-sensitive).
 - **No hallucinations:** Only extract nodes and edges explicitly stated or directly implied by the text. Do not invent facts.
-- **Coreference resolution:** If the text uses pronouns (e.g., "she", "they") that clearly refer to a named entity, resolve them to the correct entity name.
+- **Coreference resolution:** If the text uses pronouns (e.g., "she", "they") that clearly refer to a named entity introduced earlier in this same text, resolve them to that entity's name. If a pronoun or vague reference (e.g. "she", "the service", "that meeting") instead clearly and unambiguously refers to one of the Known Entities listed below, use that entity's exact listed name instead of inventing a new one. Only do this when you are confident — if it's ambiguous which entity (or whether any known entity) is meant, do not force a match; treat it as you normally would (extract with the name as it plainly appears in the text, or leave unmapped).
 - **Empty lists:** If there are no unmapped entities or relations, return empty lists for those keys. Never omit the keys.
 - **Output format:** Return ONLY a valid JSON object. No conversational filler, no markdown code blocks, no explanations.
 
@@ -48,6 +48,10 @@ Relation types: MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | 
 - SCHEDULED: a person or team scheduled an event (person/team -> event)
 - AUTHORED: a person wrote/created a document (person -> document)
 - REFERENCES: a document or event references another document, tool, or concept (document/event -> concept/tool/document)
+
+### Known Entities (optional coreference targets)
+These entities already exist in the knowledge graph from recent prior text (other emails, docs, meetings, etc). They are provided ONLY to help you resolve pronouns/vague references that clearly point to one of them — do not treat their presence here as license to invent facts about them beyond what THIS text states, and do not force a match when unsure ("when in doubt, don't match" — a missed resolution is cheaper to fix than a wrong one):
+{known_entities}
 
 ### Example
 Input Text: "Alice joined the infra team last Monday. The infra team owns the auth service, which depends on Postgres. Alice is also the on-call engineer for auth service this week."
