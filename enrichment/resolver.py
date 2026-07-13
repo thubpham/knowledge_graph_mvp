@@ -1,7 +1,9 @@
 from core.graph import KnowledgeGarden
+from core.schema import Node
 from llm_clients import LLMClient
 from prompts import ENTITY_MATCH_PROMPT
 from .extraction_schema import EntityMatchResult
+from .aliases import load_aliases
 import re
 
 # FalkorDB's vector index 'score' for similarity_function='cosine' is a
@@ -30,12 +32,52 @@ def normalize(text: str) -> str:
     return text.strip()
 
 
+def confirm_match(
+    new_name: str, new_type: str | None, candidates: list[tuple[Node, float]], client: LLMClient
+) -> str | None:
+    """Ask the LLM to confirm whether `new_name` is the same real-world
+    entity as exactly one of `candidates`. Shared by `resolve_entity`'s
+    ambiguous-band tier and the offline dedup pass in `enrichment/dedup.py`
+    so there's exactly one implementation of this prompt-filling logic.
+    Returns the matching candidate's node id, or None if no confident match."""
+    candidates_text = "\n".join(
+        f'{i+1}. name="{c.name}", type={c.type}, distance={dist:.2f}'
+        for i, (c, dist) in enumerate(candidates)
+    )
+    prompt = (
+        ENTITY_MATCH_PROMPT
+        .replace("{new_name}", new_name)
+        .replace("{new_type}", new_type or "unknown")
+        .replace("{candidates}", candidates_text)
+    )
+    raw = client.generate_gemini(prompt, schema_type=EntityMatchResult)
+    result = EntityMatchResult.model_validate_json(raw)
+
+    if result.match_name is None:
+        return None
+    for c, _ in candidates:
+        if c.name == result.match_name:
+            return c.id
+    return None
+
+
 def resolve_entity(node_name: str, node_type: str | None, kg: KnowledgeGarden, client: LLMClient):
+    # 0. Alias fast path — cheap dict lookup, no embedding/LLM cost. Catches
+    # structural identity aliasing (a name vs. a full name vs. an email
+    # address) that the embedding-based tiers below cannot: those strings
+    # just don't sit close together in embedding space, so the pair never
+    # even reaches the LLM confirmation tier. Aliases are seeded by hand or
+    # confirmed via the offline dedup pass (`enrichment/dedup.py`,
+    # `scripts/run_dedup_review.py --apply`).
+    normalized_name = normalize(node_name)
+    aliases = load_aliases()
+    if normalized_name in aliases:
+        return aliases[normalized_name]
+
     # 1. Exact-match fast path (cheap, avoids embedding calls for repeats).
     # Type-scoped when a type is known, so identical names of different
     # types (e.g. a "person" and a "tool" both called "Postgres") don't
     # cross-match, and the candidate pool stays small.
-    normalized_name = normalize(node_name)
     candidates_pool = kg.get_nodes_by_type(node_type) if node_type else kg.get_all_nodes()
     for node in candidates_pool:
         if normalize(node.name) == normalized_name:
@@ -56,22 +98,4 @@ def resolve_entity(node_name: str, node_type: str | None, kg: KnowledgeGarden, c
         return top_node.id
 
     # 4. Ambiguous zone — ask the LLM to confirm against the candidate set.
-    candidates_text = "\n".join(
-        f'{i+1}. name="{c.name}", type={c.type}, distance={dist:.2f}'
-        for i, (c, dist) in enumerate(candidates)
-    )
-    prompt = (
-        ENTITY_MATCH_PROMPT
-        .replace("{new_name}", node_name)
-        .replace("{new_type}", node_type or "unknown")
-        .replace("{candidates}", candidates_text)
-    )
-    raw = client.generate_gemini(prompt, schema_type=EntityMatchResult)
-    result = EntityMatchResult.model_validate_json(raw)
-
-    if result.match_name is None:
-        return None
-    for c, _ in candidates:
-        if c.name == result.match_name:
-            return c.id
-    return None
+    return confirm_match(node_name, node_type, candidates, client)

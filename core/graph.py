@@ -55,6 +55,7 @@ class KnowledgeGarden:
         node.last_consolidated_at = _parse_dt(props.get('last_consolidated_at'))
         node.consolidation_run_id = props.get('consolidation_run_id')
         node.created_at = _parse_dt(props.get('created_at'))
+        node.merged_into = props.get('merged_into')
         return node
 
     def _edge_from_props(self, props: dict) -> Edge:
@@ -218,12 +219,14 @@ class KnowledgeGarden:
         return self._node_from_props(result.result_set[0][0].properties)
 
     def get_all_nodes(self) -> list:
-        result = self._graph.query("MATCH (n:Entity) RETURN n")
+        # Excludes tombstoned (merged-away) nodes by default — get_node(id)
+        # is the escape hatch for fetching a tombstone directly.
+        result = self._graph.query("MATCH (n:Entity) WHERE n.merged_into IS NULL RETURN n")
         return [self._node_from_props(r[0].properties) for r in result.result_set]
 
     def get_nodes_by_type(self, node_type: str) -> list:
         result = self._graph.query(
-            "MATCH (n:Entity {type: $type}) RETURN n",
+            "MATCH (n:Entity {type: $type}) WHERE n.merged_into IS NULL RETURN n",
             {"type": node_type},
         )
         return [self._node_from_props(r[0].properties) for r in result.result_set]
@@ -231,10 +234,89 @@ class KnowledgeGarden:
     def get_recently_active_nodes(self, before: datetime, limit: int = 30) -> list:
         result = self._graph.query(
             "MATCH (n:Entity) WHERE n.last_episode_at IS NOT NULL AND n.last_episode_at < $before "
+            "AND n.merged_into IS NULL "
             "RETURN n ORDER BY n.last_episode_at DESC LIMIT $limit",
             {"before": _fmt_dt(before), "limit": limit},
         )
         return [self._node_from_props(r[0].properties) for r in result.result_set]
+
+    def get_node_embeddings_by_type(self, node_type: str) -> list[tuple[str, str, list[float]]]:
+        """(id, name, embedding) for every live (non-tombstoned) node of a
+        given type that has an embedding. Used by the offline dedup pass to
+        cluster nodes by cosine distance without going through the ANN index
+        (which truncates to top-k and isn't built for exhaustive pairwise
+        comparison)."""
+        result = self._graph.query(
+            "MATCH (n:Entity {type: $type}) "
+            "WHERE n.merged_into IS NULL AND n.embedding IS NOT NULL "
+            "RETURN n.id, n.name, n.embedding",
+            {"type": node_type},
+        )
+        out = []
+        for row in result.result_set:
+            node_id, name, embedding = row[0], row[1], row[2]
+            # vecf32(...) is a write-side constructor only — FalkorDB returns
+            # a plain list of floats on a direct RETURN. Guard defensively in
+            # case a future client version wraps it differently.
+            if embedding is not None and not isinstance(embedding, list):
+                embedding = list(embedding)
+            out.append((node_id, name, embedding))
+        return out
+
+    def merge_nodes(self, loser_id: str, winner_id: str):
+        """Tombstones `loser_id` into `winner_id`: never deletes a node.
+        All of the loser's *active* edges are repointed onto the winner (or
+        dropped if the winner already has an equivalent active edge) and the
+        loser's original copies are invalidated (valid_until set), not
+        deleted — same pattern as the rest of the temporal edge model.
+        Already-invalidated/historical edges on the loser are left alone
+        (documented v1 limitation: history stays attached to the loser, not
+        replayed onto the winner). Node-level fields are merged
+        conservatively (fill gaps, don't overwrite), and the loser is
+        tombstoned via `merged_into` so it stays fetchable by direct id
+        lookup but drops out of default node-listing queries."""
+        if loser_id == winner_id:
+            return
+
+        loser = self.get_node(loser_id)
+        winner = self.get_node(winner_id)
+        if loser is None or winner is None:
+            raise ValueError(
+                f"merge_nodes: loser={loser_id!r} winner={winner_id!r} — one or both nodes not found."
+            )
+
+        now = datetime.now()
+
+        for edge in self.get_outgoing_edges(loser_id, active_only=False):
+            if edge.valid_until is not None:
+                continue  # historical — stays attached to the loser (v1 limitation)
+            if edge.target != winner_id:
+                try:
+                    self.add_edge(winner_id, edge.target, edge.relation, edge.fact, edge.valid_from)
+                except ValueError:
+                    pass  # winner already has an equivalent active edge — drop the duplicate
+            self.invalidate_edge(edge.id, now)
+
+        for edge in self.get_incoming_edges(loser_id, active_only=False):
+            if edge.valid_until is not None:
+                continue
+            if edge.source != winner_id:
+                try:
+                    self.add_edge(edge.source, winner_id, edge.relation, edge.fact, edge.valid_from)
+                except ValueError:
+                    pass
+            self.invalidate_edge(edge.id, now)
+
+        if winner.summary is None and loser.summary is not None:
+            self.update_node(winner_id, summary=loser.summary)
+
+        if loser.last_episode_at is not None and (
+            winner.last_episode_at is None or loser.last_episode_at > winner.last_episode_at
+        ):
+            self.update_node(winner_id, last_episode_at=loser.last_episode_at.isoformat())
+
+        # Tombstone, don't delete — the loser stays recoverable via get_node(loser_id).
+        self.update_node(loser_id, merged_into=winner_id)
 
     def get_episode(self, id: str) -> Episode:
         result = self._graph.query(

@@ -13,6 +13,7 @@ class Node:
         self.last_episode_at = None
         self.last_consolidated_at = None
         self.consolidation_run_id = None
+        self.merged_into = None
 
 class Edge: 
     def __init__(self, id: str, source: str, target: str, relation: str, fact: str, valid_from: datetime | None):
