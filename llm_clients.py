@@ -119,14 +119,58 @@ class _ConcentrateProvider:
         return _retry(call, _http_is_transient, max_retries)
 
 
-_PROVIDERS = {"gemini": _GeminiProvider, "concentrate": _ConcentrateProvider}
+class _OpenAIProvider:
+    """Talks to OpenAI's Chat Completions API directly via OPENAI_API_KEY."""
+
+    name = "openai"
+    _BASE_URL = "https://api.openai.com/v1/chat/completions"
+
+    def __init__(self):
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY not set in environment.")
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    def generate(self, prompt: str, schema_type: type[BaseModel] | None = None, max_retries: int = 5) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if schema_type is not None:
+            schema = schema_type.model_json_schema()
+            _patch_schema(schema)  # OpenAI structured outputs require additionalProperties: false at every object level
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_type.__name__.lower(),
+                    "schema": schema,
+                    "strict": True,
+                },
+            }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        def call():
+            resp = httpx.post(self._BASE_URL, json=payload, headers=headers, timeout=120)
+            if resp.status_code in (429, 503):
+                raise _TransientError(resp.status_code, resp.text)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+
+        return _retry(call, _http_is_transient, max_retries)
+
+
+_PROVIDERS = {"gemini": _GeminiProvider, "concentrate": _ConcentrateProvider, "openai": _OpenAIProvider}
 
 
 class LLMClient:
     """
-    Generation provider is chosen by the LLM_PROVIDER env var ("gemini" | "concentrate"),
-    defaulting to "gemini". Swap providers (e.g. when one runs out of credit) by changing
-    that env var — no code changes needed. Embeddings always go straight to Gemini
+    Generation provider is chosen by the LLM_PROVIDER env var ("gemini" | "concentrate" |
+    "openai"), defaulting to "gemini". Swap providers (e.g. when one runs out of credit) by
+    changing that env var — no code changes needed. Embeddings always go straight to Gemini
     regardless of provider, since that's the only embedding source wired up.
     """
 
@@ -168,11 +212,21 @@ class LLMClient:
 
 
 def _patch_schema(schema: dict):
+    # OpenAI-style strict json_schema mode (used by both the openai and
+    # concentrate providers) requires every property to be listed in
+    # "required" — optionality is expressed via an "anyOf"-with-null type,
+    # not by omitting the key — and rejects "default" entirely.
+    schema.pop("default", None)
     if schema.get("type") == "object":
         schema.setdefault("additionalProperties", False)
-        for prop in schema.get("properties", {}).values():
+        properties = schema.get("properties", {})
+        if properties:
+            schema["required"] = list(properties.keys())
+        for prop in properties.values():
             _patch_schema(prop)
     if "items" in schema:
         _patch_schema(schema["items"])
+    for sub in schema.get("anyOf", []):
+        _patch_schema(sub)
     for sub in schema.get("$defs", {}).values():
         _patch_schema(sub)
