@@ -20,7 +20,7 @@ from pathlib import Path
 from core.graph import KnowledgeGarden
 from core.schema import Node
 from llm_clients import LLMClient
-from .resolver import AUTO_MATCH_DISTANCE, NO_MATCH_DISTANCE, confirm_match, normalize
+from .resolver import NO_MATCH_DISTANCE, confirm_match, normalize
 from .aliases import ALIAS_PATH, load_aliases, save_alias  # re-exported for callers of this module
 
 REVIEW_LOG_PATH = Path(__file__).parent.parent / ".local" / "dedup_review_log.jsonl"
@@ -98,11 +98,23 @@ def find_merge_candidates(kg: KnowledgeGarden, node_type: str) -> list[dict]:
 
 def review_cluster(kg: KnowledgeGarden, client: LLMClient, cluster: dict) -> list[dict]:
     """Picks the cluster's earliest-created_at member as the canonical
-    ("winner") candidate and compares every other member against it:
-    - distance <= AUTO_MATCH_DISTANCE -> auto-confirm, no LLM call
-    - otherwise -> ask the LLM via the shared confirm_match() helper
-    Returns proposal dicts; never writes to the graph or the alias table —
-    that's the caller's job (scripts/run_dedup_review.py --apply)."""
+    ("winner") candidate and asks the LLM (via the shared confirm_match()
+    helper) to confirm every other member against it before proposing a
+    merge.
+
+    No blind auto-merge tier here, even below AUTO_MATCH_DISTANCE: that
+    threshold was calibrated for resolve_entity's *live* path, where a new
+    entity is compared only against its ANN-narrowed top-k neighbors. This
+    pass does an exhaustive O(n^2) sweep across an entire type, which is far
+    more exposed to embedding-space noise — real runs showed genuinely
+    distinct entities (e.g. two different short person names, or a database
+    tool vs. an unrelated tool) landing below 0.20 and getting auto-merged.
+    Since this is an occasional offline job, not a per-episode cost path,
+    there's no reason to skip the LLM check to save a handful of calls — the
+    codebase's own stated bias is "a missed merge is cheaper to fix than a
+    wrongful one." Returns proposal dicts; never writes to the graph or the
+    alias table — that's the caller's job (scripts/run_dedup_review.py
+    --apply)."""
     member_ids = [mid for mid, _ in cluster["members"]]
     nodes_by_id = {mid: node for mid in member_ids if (node := kg.get_node(mid)) is not None}
     if len(nodes_by_id) < 2:
@@ -126,17 +138,6 @@ def review_cluster(kg: KnowledgeGarden, client: LLMClient, cluster: dict) -> lis
             # computed. Treat conservatively: route to the LLM rather than
             # guessing a distance.
             distance = NO_MATCH_DISTANCE
-
-        if distance <= AUTO_MATCH_DISTANCE:
-            proposals.append({
-                "loser_id": mid,
-                "loser_name": node.name,
-                "winner_id": canonical.id,
-                "winner_name": canonical.name,
-                "distance": distance,
-                "method": "auto",
-            })
-            continue
 
         match_id = confirm_match(node.name, node.type, [(canonical, distance)], client)
         proposals.append({
