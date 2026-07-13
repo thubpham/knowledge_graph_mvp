@@ -100,6 +100,12 @@ plain-English answer from the retrieved facts.
 **Pluggable LLM provider** — set `LLM_PROVIDER=gemini` (default) or
 `LLM_PROVIDER=concentrate` in `.env` to switch text-generation providers
 without touching code. Embeddings always go through Gemini regardless.
+Optionally set `QUERY_LLM_PROVIDER` to route just the query/answer flow
+(`api.py`'s `/query` endpoint — intent parsing and answer synthesis) to a
+different provider than ingestion/consolidation, e.g.
+`QUERY_LLM_PROVIDER=concentrate` to answer questions via Claude while still
+ingesting via free Gemini. Defaults to whatever `LLM_PROVIDER` resolves to
+if unset.
 
 **Web UI** — `api.py` (FastAPI) serves a graph visualization and a query box
 at `http://localhost:8000` once running. It's a single static HTML file with

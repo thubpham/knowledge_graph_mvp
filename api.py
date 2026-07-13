@@ -1,3 +1,4 @@
+import os
 import sys
 import traceback
 import re
@@ -33,7 +34,7 @@ def get_kg() -> KnowledgeGarden:
 def get_client() -> LLMClient:
     global _client
     if _client is None:
-        _client = LLMClient()
+        _client = LLMClient(provider=os.getenv("QUERY_LLM_PROVIDER"))
     return _client
 
 
