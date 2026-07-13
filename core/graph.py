@@ -32,6 +32,7 @@ class KnowledgeGarden:
             "CREATE INDEX FOR ()-[e:EDGE]-() ON (e.relation)",
             "CREATE INDEX FOR ()-[e:EDGE]-() ON (e.valid_until)",
             "CREATE INDEX FOR ()-[e:EDGE]-() ON (e.valid_from)",
+            "CREATE INDEX FOR (n:Entity) ON (n.type)",
         ]
         for idx in indexes:
             try:
@@ -218,6 +219,13 @@ class KnowledgeGarden:
 
     def get_all_nodes(self) -> list:
         result = self._graph.query("MATCH (n:Entity) RETURN n")
+        return [self._node_from_props(r[0].properties) for r in result.result_set]
+
+    def get_nodes_by_type(self, node_type: str) -> list:
+        result = self._graph.query(
+            "MATCH (n:Entity {type: $type}) RETURN n",
+            {"type": node_type},
+        )
         return [self._node_from_props(r[0].properties) for r in result.result_set]
 
     def get_episode(self, id: str) -> Episode:

@@ -32,8 +32,12 @@ def normalize(text: str) -> str:
 
 def resolve_entity(node_name: str, node_type: str | None, kg: KnowledgeGarden, client: LLMClient):
     # 1. Exact-match fast path (cheap, avoids embedding calls for repeats).
+    # Type-scoped when a type is known, so identical names of different
+    # types (e.g. a "person" and a "tool" both called "Postgres") don't
+    # cross-match, and the candidate pool stays small.
     normalized_name = normalize(node_name)
-    for node in kg.get_all_nodes():
+    candidates_pool = kg.get_nodes_by_type(node_type) if node_type else kg.get_all_nodes()
+    for node in candidates_pool:
         if normalize(node.name) == normalized_name:
             return node.id
 
