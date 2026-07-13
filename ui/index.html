@@ -600,8 +600,14 @@ async function loadGraph() {
   buildLegend();
   attachInteractions();
   initHalo();
-  physics = new GraphPhysics(cy);
-  physics.start();
+  // GraphPhysics disabled: at this graph's scale (1000+ nodes) its
+  // collision-repulsion step is an O(n^2) check every animation frame,
+  // which is a real perf problem, not a tuning one — it'd need spatial
+  // partitioning (grid/quadtree) to run smoothly at this size. Pan/zoom/
+  // drag/click all still work fully; nodes just stay where the layout
+  // placed them instead of ambient-drifting.
+  // physics = new GraphPhysics(cy);
+  // physics.start();
 }
 
 function scatterIsolatedNodes() {
@@ -642,15 +648,15 @@ document.getElementById('legend-toggle').onclick = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// GraphPhysics — mass-spring simulation: stronger idle drift + bouncy
+// GraphPhysics — mass-spring simulation: gentle idle drift + smooth
 // contact collisions.
 //
 // Every non-grabbed node is a damped spring pulling toward its drift
 // target (home + a sine wander). Overlap between two nodes applies a
 // contact-only repulsion force (no force at a distance — that was the
-// "magnets" complaint). Because the spring is underdamped, a node that
-// gets shoved settles with a couple of visible overshoot wobbles instead
-// of just stopping dead — that's the "bouncy" feel. The node you're
+// "magnets" complaint). The spring is close to critically damped, so a
+// node that gets shoved eases back into place instead of overshooting and
+// bouncing — a slow ambient float rather than a jiggle. The node you're
 // actually dragging is driven directly by Cytoscape; everything else
 // reacts to it each frame.
 // ═══════════════════════════════════════════════════════════════════════
@@ -670,8 +676,8 @@ class GraphPhysics {
       const p = n.position();
       n.scratch('_home', { x: p.x, y: p.y });
       n.scratch('_phase', Math.random() * Math.PI * 2);
-      n.scratch('_speed', 0.4 + Math.random() * 0.35);   // stronger drift
-      n.scratch('_amp', 4 + Math.random() * 4.5);          // stronger drift
+      n.scratch('_speed', 0.18 + Math.random() * 0.12);   // gentle drift
+      n.scratch('_amp', 3 + Math.random() * 3);             // gentle drift
       n.scratch('_vel', { x: 0, y: 0 });
     });
   }
@@ -699,10 +705,10 @@ class GraphPhysics {
   _step(dt) {
     const arr = this.nodes;
     const n = arr.length;
-    const K_SPRING = 70;     // pull toward drift target/home
-    const DAMPING = 6;       // < critical → slight overshoot, i.e. bounce
-    const K_REPEL = 1100;    // contact-only collision push
-    const MAX_SPEED = 420;
+    const K_SPRING = 30;     // pull toward drift target/home (softer)
+    const DAMPING = 11;      // ≈ critical for K_SPRING=30 → no overshoot/bounce
+    const K_REPEL = 650;     // contact-only collision push (softer)
+    const MAX_SPEED = 140;
 
     const positions = new Array(n);
     for (let i = 0; i < n; i++) positions[i] = arr[i].position();
