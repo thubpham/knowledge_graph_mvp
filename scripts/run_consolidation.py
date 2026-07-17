@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
+from trace import Run
 from consolidation.consolidate_all import consolidate_all
 
 kg = KnowledgeGarden()
@@ -16,7 +17,8 @@ pending = [
 ]
 print(f"Nodes total: {len(nodes)} | Pending consolidation: {len(pending)}\n")
 
-result = consolidate_all(kg, client)
+with Run(flow="consolidation", meta={"pending": len(pending)}):
+    result = consolidate_all(kg, client)
 
 print(f"\n── Consolidation complete ──")
 print(f"  Consolidated:          {result['consolidated']}")

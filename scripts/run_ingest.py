@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
+from trace import Run
 from data.sources.notion_ingester import ingest_notion_pages
 from data.sources.gcal_ingester import ingest_gcal_events
 from data.sources.gmail_ingester import ingest_gmail_messages
@@ -16,7 +17,8 @@ client = LLMClient()
 def _run_source(name: str, fn):
     print(f"── {name} " + "─" * max(1, 40 - len(name)))
     try:
-        result = fn(kg, client)
+        with Run(flow="ingest", meta={"source": name}):
+            result = fn(kg, client)
     except Exception as e:
         print(f"\n  ✗ {name} aborted: {e}")
         return {"total_fetched": 0, "ingested": 0, "skipped_dedup": 0, "errors": 0}

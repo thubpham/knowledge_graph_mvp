@@ -17,6 +17,7 @@ from retrieval.query import query
 from retrieval.scoring import score_edge
 from core.schema import Edge
 from prompts import SYNTHESIS_PROMPT
+from trace import Run
 
 app = FastAPI(title="Knowledge Graph Query UI")
 
@@ -206,58 +207,59 @@ def get_node_detail(node_id: str):
 @app.post("/query", response_model=QueryResponse)
 def run_query(req: QueryRequest):
     try:
-        kg = get_kg()
-        client = get_client()
-        now = datetime.now()
+        with Run(flow="query", meta={"question": req.question}):
+            kg = get_kg()
+            client = get_client()
+            now = datetime.now()
 
-        raw = query(kg, req.question, client, now)
+            raw = query(kg, req.question, client, now)
 
-        # query() returns a dict on error/unrecognised pattern
-        if isinstance(raw, dict):
-            error_msg = raw.get("error", "unknown error")
-            debug: dict = dict(raw)
+            # query() returns a dict on error/unrecognised pattern
+            if isinstance(raw, dict):
+                error_msg = raw.get("error", "unknown error")
+                debug: dict = dict(raw)
 
-            # If the anchor entity wasn't found, suggest close matches by name
-            if raw.get("error") == "entity not found":
-                anchor = raw.get("anchor_entity", "")
-                suggestions = _find_similar_entities(kg, anchor)
-                debug["suggestions"] = suggestions
-                if suggestions:
-                    error_msg = (
-                        f"Entity '{anchor}' not found. "
-                        f"Did you mean: {', '.join(s['id'] for s in suggestions[:3])}?"
-                    )
+                # If the anchor entity wasn't found, suggest close matches by name
+                if raw.get("error") == "entity not found":
+                    anchor = raw.get("anchor_entity", "")
+                    suggestions = _find_similar_entities(kg, anchor)
+                    debug["suggestions"] = suggestions
+                    if suggestions:
+                        error_msg = (
+                            f"Entity '{anchor}' not found. "
+                            f"Did you mean: {', '.join(s['id'] for s in suggestions[:3])}?"
+                        )
 
-            return QueryResponse(question=req.question, results=[], error=error_msg, debug=debug)
+                return QueryResponse(question=req.question, results=[], error=error_msg, debug=debug)
 
-        # history_traversal returns a plain dict
-        if not isinstance(raw, list):
-            return QueryResponse(question=req.question, results=[], debug=raw)
+            # history_traversal returns a plain dict
+            if not isinstance(raw, list):
+                return QueryResponse(question=req.question, results=[], debug=raw)
 
-        results = []
-        for e in raw:
-            if not isinstance(e, Edge):
-                continue
-            score = score_edge(e, now)
-            results.append(EdgeResult(
-                id=e.id,
-                source=e.source,
-                target=e.target,
-                relation=e.relation,
-                fact=e.fact,
-                score=round(score, 4),
-                valid_from=e.valid_from.isoformat() if e.valid_from else None,
-                valid_until=e.valid_until.isoformat() if e.valid_until else None,
-                confidence=e.confidence or 1.0,
-            ))
+            results = []
+            for e in raw:
+                if not isinstance(e, Edge):
+                    continue
+                score = score_edge(e, now)
+                results.append(EdgeResult(
+                    id=e.id,
+                    source=e.source,
+                    target=e.target,
+                    relation=e.relation,
+                    fact=e.fact,
+                    score=round(score, 4),
+                    valid_from=e.valid_from.isoformat() if e.valid_from else None,
+                    valid_until=e.valid_until.isoformat() if e.valid_until else None,
+                    confidence=e.confidence or 1.0,
+                ))
 
-        answer = None
-        if results:
-            facts_text = "\n".join(f"- {e.fact} ({e.source} {e.relation} {e.target})" for e in results)
-            prompt = SYNTHESIS_PROMPT.replace("{question}", req.question).replace("{facts}", facts_text)
-            answer = client.generate_text(prompt)
+            answer = None
+            if results:
+                facts_text = "\n".join(f"- {e.fact} ({e.source} {e.relation} {e.target})" for e in results)
+                prompt = SYNTHESIS_PROMPT.replace("{question}", req.question).replace("{facts}", facts_text)
+                answer = client.generate_text(prompt)
 
-        return QueryResponse(question=req.question, answer=answer, results=results)
+            return QueryResponse(question=req.question, answer=answer, results=results)
 
     except Exception as exc:
         tb = traceback.format_exc()
