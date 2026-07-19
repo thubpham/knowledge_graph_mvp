@@ -1,53 +1,29 @@
-EXTRACTION_PROMPT = """
-You are an expert Information Extraction system. Your task is to analyze the provided Natural Language Text and extract entities (nodes) and their relationships (edges) into a strict, valid JSON format based on the provided schema.
+ENTITY_EXTRACTION_PROMPT = """
+You are an expert Information Extraction system. Your task is to analyze the provided Natural Language Text and extract only the entities (nodes) mentioned in it, into a strict, valid JSON format based on the provided schema. Do not extract relationships — that is a separate task performed later.
 
 ### Schema Definition
-You must output a single JSON object containing exactly four keys: "nodes", "edges", "unmapped_entities", and "unmapped_relations".
+You must output a single JSON object containing exactly two keys: "nodes" and "unmapped_entities".
 
 1. "nodes": A list of objects, where each object represents an entity and MUST contain:
    - "name": The specific name or identifier of the entity as it appears or is inferred from the text.
    - "type": The category of the entity. MUST be one of: "person" | "service" | "team" | "tool" | "concept" | "event" | "document"
+   - "context": A short snippet (ideally the single sentence) from the source text where this entity is mentioned or introduced. Capture surrounding descriptive detail (role, category, what it's part of) rather than just repeating the name — this is used later to disambiguate the entity from similarly-named-but-different entities elsewhere in the graph.
 
-2. "edges": A list of objects, where each object represents a directed relationship and MUST contain:
-   - "source": The "name" of the starting node. Must exactly match a "name" in the "nodes" list.
-   - "target": The "name" of the ending node. Must exactly match a "name" in the "nodes" list.
-   - "relation": MUST be one of: "MEMBER_OF" | "OWNS" | "DEPENDS_ON" | "USES" | "REPORTED" | "RESOLVED_BY" | "MENTIONED_IN" | "ATTENDED" | "DISCUSSED" | "DECIDED" | "SENT_TO" | "SCHEDULED" | "AUTHORED" | "REFERENCES"
-   - "fact": A short, accurate snippet from the text that justifies this relationship.
-
-3. "unmapped_entities": A list of objects for entities that cannot be classified into the allowed types. Each object MUST contain:
+2. "unmapped_entities": A list of objects for entities that cannot be classified into the allowed types. Each object MUST contain:
    - "name": The entity name as it appears in the text.
    - "attempted_type": The type you would assign if unconstrained.
    - "fact": The snippet from the text where this entity appears.
    - "reason": Why it cannot be mapped to the allowed types.
 
-4. "unmapped_relations": A list of objects for relationships that cannot be mapped to the allowed relation types. Each object MUST contain:
-   - "source": The source entity name.
-   - "target": The target entity name.
-   - "attempted_relation": The relation you would assign if unconstrained.
-   - "fact": The snippet from the text that describes this relationship.
-   - "reason": Why it cannot be mapped to the allowed relation types.
-
 ### Strict Extraction Rules
 - **Type constraint:** Every node type MUST be one of the allowed types. If it cannot be mapped, do NOT include it in "nodes" — put it in "unmapped_entities" instead.
-- **Relation constraint:** Every relation MUST be one of the allowed relation types. If it cannot be mapped, do NOT include it in "edges" — put it in "unmapped_relations" instead. The source and target nodes should still appear in "nodes" if they have other valid edges or can be typed.
-- **Entity consistency:** The "source" and "target" strings in "edges" must exactly match "name" strings in "nodes" (case-sensitive).
-- **No hallucinations:** Only extract nodes and edges explicitly stated or directly implied by the text. Do not invent facts.
-- **Coreference resolution:** If the text uses pronouns (e.g., "she", "they") that clearly refer to a named entity introduced earlier in this same text, resolve them to that entity's name. If a pronoun or vague reference (e.g. "she", "the service", "that meeting") instead clearly and unambiguously refers to one of the Known Entities listed below, use that entity's exact listed name instead of inventing a new one. Only do this when you are confident — if it's ambiguous which entity (or whether any known entity) is meant, do not force a match; treat it as you normally would (extract with the name as it plainly appears in the text, or leave unmapped).
-- **Empty lists:** If there are no unmapped entities or relations, return empty lists for those keys. Never omit the keys.
+- **No hallucinations:** Only extract entities explicitly stated or directly implied by the text. Do not invent entities.
+- **Coreference resolution:** If the text uses pronouns (e.g., "she", "they") that clearly refer to a named entity introduced earlier in this same text, resolve them to that entity's name — do not create a separate node for the pronoun. If a pronoun or vague reference (e.g. "she", "the service", "that meeting") instead clearly and unambiguously refers to one of the Known Entities listed below, use that entity's exact listed name instead of inventing a new one. Only do this when you are confident — if it's ambiguous which entity (or whether any known entity) is meant, do not force a match; treat it as you normally would (extract with the name as it plainly appears in the text, or leave unmapped).
+- **Empty lists:** If there are no unmapped entities, return an empty list for that key. Never omit the key.
 - **Output format:** Return ONLY a valid JSON object. No conversational filler, no markdown code blocks, no explanations.
 
-### Allowed Vocabularies
+### Allowed Vocabulary
 Node types: person | service | team | tool | concept | event | document
-Relation types: MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | MENTIONED_IN | ATTENDED | DISCUSSED | DECIDED | SENT_TO | SCHEDULED | AUTHORED | REFERENCES
-
-### Relation Type Guide (for calendar/email/docs content)
-- ATTENDED: a person attended a meeting/event (person -> event)
-- DISCUSSED: a person or group talked about a topic/concept in a meeting, email, or doc (source -> concept)
-- DECIDED: a decision was made about something (person/team -> concept, or event -> concept)
-- SENT_TO: a message/email was sent from one person to another (person -> person)
-- SCHEDULED: a person or team scheduled an event (person/team -> event)
-- AUTHORED: a person wrote/created a document (person -> document)
-- REFERENCES: a document or event references another document, tool, or concept (document/event -> concept/tool/document)
 
 ### Known Entities (optional coreference targets)
 These entities already exist in the knowledge graph from recent prior text (other emails, docs, meetings, etc). They are provided ONLY to help you resolve pronouns/vague references that clearly point to one of them — do not treat their presence here as license to invent facts about them beyond what THIS text states, and do not force a match when unsure ("when in doubt, don't match" — a missed resolution is cheaper to fix than a wrong one):
@@ -59,17 +35,71 @@ Input Text: "Alice joined the infra team last Monday. The infra team owns the au
 Output:
 {
   "nodes": [
-    {"name": "Alice", "type": "person"},
-    {"name": "infra team", "type": "team"},
-    {"name": "auth service", "type": "service"},
-    {"name": "Postgres", "type": "tool"}
+    {"name": "Alice", "type": "person", "context": "Alice joined the infra team last Monday."},
+    {"name": "infra team", "type": "team", "context": "Alice joined the infra team last Monday."},
+    {"name": "auth service", "type": "service", "context": "The infra team owns the auth service, which depends on Postgres."},
+    {"name": "Postgres", "type": "tool", "context": "The auth service depends on Postgres."}
   ],
+  "unmapped_entities": []
+}
+
+### Current Task
+Input Text: "{text}"
+Output:
+"""
+
+RELATION_EXTRACTION_PROMPT = """
+You are an expert Information Extraction system. You have already been given the list of entities present in the provided Natural Language Text. Your task now is ONLY to extract the directed relationships (edges) between those entities, into a strict, valid JSON format based on the provided schema.
+
+### Schema Definition
+You must output a single JSON object containing exactly two keys: "edges" and "unmapped_relations".
+
+1. "edges": A list of objects, where each object represents a directed relationship and MUST contain:
+   - "source": The "name" of the starting entity. Must exactly match one of the "name" strings in the Entities list below.
+   - "target": The "name" of the ending entity. Must exactly match one of the "name" strings in the Entities list below.
+   - "relation": MUST be one of: "MEMBER_OF" | "OWNS" | "DEPENDS_ON" | "USES" | "REPORTED" | "RESOLVED_BY" | "MENTIONED_IN" | "ATTENDED" | "DISCUSSED" | "DECIDED" | "SENT_TO" | "SCHEDULED" | "AUTHORED" | "REFERENCES"
+   - "fact": A short, accurate snippet from the text that justifies this relationship.
+
+2. "unmapped_relations": A list of objects for relationships that cannot be mapped to the allowed relation types. Each object MUST contain:
+   - "source": The source entity name.
+   - "target": The target entity name.
+   - "attempted_relation": The relation you would assign if unconstrained.
+   - "fact": The snippet from the text that describes this relationship.
+   - "reason": Why it cannot be mapped to the allowed relation types.
+
+### Strict Extraction Rules
+- **Entity constraint:** "source" and "target" MUST exactly match one of the "name" strings in the Entities list below (case-sensitive). Never introduce a source/target name that isn't in that list.
+- **Relation constraint:** Every relation MUST be one of the allowed relation types. If it cannot be mapped, do NOT include it in "edges" — put it in "unmapped_relations" instead.
+- **No hallucinations:** Only extract relationships explicitly stated or directly implied by the text. Do not invent facts.
+- **Empty lists:** If there are no unmapped relations, return an empty list for that key. Never omit the key.
+- **Output format:** Return ONLY a valid JSON object. No conversational filler, no markdown code blocks, no explanations.
+
+### Allowed Vocabulary
+Relation types: MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | MENTIONED_IN | ATTENDED | DISCUSSED | DECIDED | SENT_TO | SCHEDULED | AUTHORED | REFERENCES
+
+### Relation Type Guide (for calendar/email/docs content)
+- ATTENDED: a person attended a meeting/event (person -> event)
+- DISCUSSED: a person or group talked about a topic/concept in a meeting, email, or doc (source -> concept)
+- DECIDED: a decision was made about something (person/team -> concept, or event -> concept)
+- SENT_TO: a message/email was sent from one person to another (person -> person)
+- SCHEDULED: a person or team scheduled an event (person/team -> event)
+- AUTHORED: a person wrote/created a document (person -> document)
+- REFERENCES: a document or event references another document, tool, or concept (document/event -> concept/tool/document)
+
+### Entities (the only valid source/target names)
+{entities}
+
+### Example
+Input Text: "Alice joined the infra team last Monday. The infra team owns the auth service, which depends on Postgres. Alice is also the on-call engineer for auth service this week."
+Entities: Alice (person), infra team (team), auth service (service), Postgres (tool)
+
+Output:
+{
   "edges": [
     {"source": "Alice", "target": "infra team", "relation": "MEMBER_OF", "fact": "Alice joined the infra team last Monday"},
     {"source": "infra team", "target": "auth service", "relation": "OWNS", "fact": "The infra team owns the auth service"},
     {"source": "auth service", "target": "Postgres", "relation": "DEPENDS_ON", "fact": "which depends on Postgres"}
   ],
-  "unmapped_entities": [],
   "unmapped_relations": [
     {
       "source": "Alice",
@@ -83,6 +113,9 @@ Output:
 
 ### Current Task
 Input Text: "{text}"
+Entities:
+{entities}
+
 Output:
 """
 

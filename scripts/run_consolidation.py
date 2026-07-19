@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -8,7 +9,12 @@ from trace import Run
 from consolidation.consolidate_all import consolidate_all
 
 kg = KnowledgeGarden()
-client = LLMClient()
+# Consolidation is multi-step reasoning (change-over-time across episodes) ->
+# Groq's 70B model by convention, same rationale as extraction. No hardcoded
+# fallback here — .env is the single source of truth; if unset, LLMClient
+# falls through to LLM_PROVIDER, then "gemini". See llm_clients.py and
+# IMPROVEMENTS.md's Provider Routing section.
+client = LLMClient(provider=os.getenv("CONSOLIDATION_LLM_PROVIDER"))
 
 nodes = kg.get_all_nodes()
 pending = [

@@ -1,8 +1,9 @@
+import json
 import os
 import time
 import httpx
 from dataclasses import dataclass
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from dotenv import load_dotenv
 
 from trace import current_run
@@ -257,20 +258,89 @@ class _GroqProvider:
         return text, usage, retries
 
 
+class _OllamaProvider:
+    """Talks to a local Ollama server's OpenAI-compatible endpoint. No API key,
+    no per-token cost, no rate limit — used for the highest-call-volume,
+    lowest-individual-stakes calls (entity-match/dedup confirmation), where a
+    wrong local call just falls back to "no match" and is cheap to recover
+    from downstream. Uses JSON-object mode rather than strict json_schema
+    mode: Ollama's OpenAI-compat layer doesn't enforce schemas the way
+    Gemini/Groq do, so correctness relies on the prompt already spelling out
+    the expected keys (true for every prompt this provider is used with, e.g.
+    `ENTITY_MATCH_PROMPT`) plus `LLMClient.generate_gemini`'s
+    validate-and-retry wrapper for non-native-schema providers."""
+
+    name = "ollama"
+    _BASE_URL = "http://localhost:11434/v1/chat/completions"
+
+    def __init__(self):
+        self.model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
+    def generate(self, prompt: str, schema_type: type[BaseModel] | None = None, max_retries: int = 5) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if schema_type is not None:
+            payload["response_format"] = {"type": "json_object"}
+        headers = {"Content-Type": "application/json"}
+
+        def call():
+            resp = httpx.post(self._BASE_URL, json=payload, headers=headers, timeout=120)
+            if resp.status_code in (429, 503):
+                raise _TransientError(resp.status_code, resp.text)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"], _usage_from_json(data)
+
+        (text, usage), retries = _retry(call, _http_is_transient, max_retries)
+        return text, usage, retries
+
+
 _PROVIDERS = {
     "gemini": _GeminiProvider,
     "concentrate": _ConcentrateProvider,
     "openai": _OpenAIProvider,
     "groq": _GroqProvider,
+    "ollama": _OllamaProvider,
 }
+
+# Providers whose API natively enforces the JSON schema at decode time
+# (Gemini's response_schema is constrained decoding — the model literally
+# cannot emit invalid-shape JSON). Providers not in this set are only
+# "instructed to comply" via prompt + json_schema/json_object mode, so their
+# output is validated and retried by generate_gemini() below.
+_NATIVE_SCHEMA_PROVIDERS = {"gemini"}
+
+
+def _retry_validate(call, schema_type: type[BaseModel], max_retries: int = 5):
+    """Runs `call()` (expected to return `(text, Usage, retries)`) and
+    validates the returned text against `schema_type`, re-invoking `call()`
+    entirely (a fresh generation, not just a re-parse) if validation fails.
+    Used for providers whose schema enforcement isn't native, since a
+    malformed-JSON response from those is a real, expected failure mode
+    rather than an edge case."""
+    last_exc = None
+    for attempt in range(max_retries):
+        text, usage, retries = call()
+        try:
+            schema_type.model_validate_json(text)
+            return text, usage, retries
+        except (ValidationError, json.JSONDecodeError) as e:
+            last_exc = e
+            print(
+                f"Schema validation failed ({str(e)[:80]}). "
+                f"Retrying generation... (attempt {attempt + 1}/{max_retries})"
+            )
+    raise last_exc
 
 
 class LLMClient:
     """
     Generation provider is chosen by the LLM_PROVIDER env var ("gemini" | "concentrate" |
-    "openai" | "groq"), defaulting to "gemini". Swap providers (e.g. when one runs out of credit) by
-    changing that env var — no code changes needed. Embeddings always go straight to Gemini
-    regardless of provider, since that's the only embedding source wired up.
+    "openai" | "groq" | "ollama"), defaulting to "gemini". Swap providers (e.g. when one runs out
+    of credit) by changing that env var — no code changes needed. Embeddings always go straight
+    to Gemini regardless of provider, since that's the only embedding source wired up.
     """
 
     def __init__(self, provider: str | None = None):
@@ -283,10 +353,15 @@ class LLMClient:
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
 
     def generate_gemini(self, prompt: str, schema_type: type[BaseModel], max_retries: int = 5) -> str:
-        return self._traced_call(
-            kind="generate_gemini", prompt=prompt,
-            call=lambda: self._provider.generate(prompt, schema_type=schema_type, max_retries=max_retries),
-        )
+        def call():
+            return self._provider.generate(prompt, schema_type=schema_type, max_retries=max_retries)
+
+        if self._provider.name in _NATIVE_SCHEMA_PROVIDERS:
+            wrapped_call = call
+        else:
+            wrapped_call = lambda: _retry_validate(call, schema_type, max_retries)
+
+        return self._traced_call(kind="generate_gemini", prompt=prompt, call=wrapped_call)
 
     def generate_text(self, prompt: str, max_retries: int = 5) -> str:
         return self._traced_call(

@@ -35,6 +35,12 @@ def get_kg() -> KnowledgeGarden:
 def get_client() -> LLMClient:
     global _client
     if _client is None:
+        # Intent parsing (query()) and answer synthesis (SYNTHESIS_PROMPT below)
+        # both go through this client -> Groq's 70B model by convention, same
+        # rationale as extraction/consolidation. No hardcoded fallback here —
+        # .env is the single source of truth; if unset, LLMClient falls
+        # through to LLM_PROVIDER, then "gemini". See llm_clients.py and
+        # IMPROVEMENTS.md's Provider Routing section.
         _client = LLMClient(provider=os.getenv("QUERY_LLM_PROVIDER"))
     return _client
 

@@ -32,6 +32,17 @@ def normalize(text: str) -> str:
     return text.strip()
 
 
+def embedding_text(name: str, context: str | None) -> str:
+    """The string actually embedded for a node — bare name alone carries too
+    little semantic signal to disambiguate short, similarly-named-but-different
+    entities (see IMPROVEMENTS.md's "lack of context" finding: "Bob"/"vern",
+    "PostgreSQL"/"crm" landing suspiciously close in embedding space). Callers
+    with a source-text snippet available (entity extraction) should pass it as
+    `context`; callers without one (consolidation targets, unmapped-log
+    replay) pass `None` and fall back to name-only, matching legacy behavior."""
+    return f"{name}: {context}" if context else name
+
+
 def confirm_match(
     new_name: str, new_type: str | None, candidates: list[tuple[Node, float]], client: LLMClient
 ) -> str | None:
@@ -61,7 +72,13 @@ def confirm_match(
     return None
 
 
-def resolve_entity(node_name: str, node_type: str | None, kg: KnowledgeGarden, client: LLMClient):
+def resolve_entity(
+    node_name: str,
+    node_type: str | None,
+    kg: KnowledgeGarden,
+    client: LLMClient,
+    context: str | None = None,
+):
     # 0. Alias fast path — cheap dict lookup, no embedding/LLM cost. Catches
     # structural identity aliasing (a name vs. a full name vs. an email
     # address) that the embedding-based tiers below cannot: those strings
@@ -83,8 +100,10 @@ def resolve_entity(node_name: str, node_type: str | None, kg: KnowledgeGarden, c
         if normalize(node.name) == normalized_name:
             return node.id
 
-    # 2. Embed the name and search for nearby candidates.
-    embedding = client.embed(node_name)
+    # 2. Embed the name (+ source-text context, when available) and search
+    # for nearby candidates. See embedding_text()'s docstring for why bare
+    # names alone are an insufficient signal here.
+    embedding = client.embed(embedding_text(node_name, context))
     candidates = kg.find_similar_nodes(embedding, entity_type=node_type, k=CANDIDATE_K)
     if not candidates:
         return None

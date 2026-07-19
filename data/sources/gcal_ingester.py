@@ -7,7 +7,7 @@ from enrichment.ingester import ingest_episode
 from .gcal_fetcher import fetch_gcal_events
 
 
-def ingest_gcal_events(kg: KnowledgeGarden, client: LLMClient) -> dict:
+def ingest_gcal_events(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
     events = fetch_gcal_events()
     ingested = 0
     skipped_dedup = 0
@@ -31,6 +31,7 @@ def ingest_gcal_events(kg: KnowledgeGarden, client: LLMClient) -> dict:
                 reference_time=reference_time,
                 client=client,
                 kg=kg,
+                resolution_client=resolution_client,
             )
 
             kg.update_episode(

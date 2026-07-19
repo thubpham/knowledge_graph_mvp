@@ -5,7 +5,7 @@ from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
 from core.schema import *
 from .extractor import extract_entities_and_relations
-from .resolver import resolve_entity, normalize
+from .resolver import resolve_entity, normalize, embedding_text
 from .chunking import chunk_text
 from .extraction_schema import ExtractionResult
 
@@ -54,7 +54,20 @@ def _log_unmapped(response: ExtractionResult, episode_id: str, reference_time: d
             }) + "\n")
 
 
-def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, kg: KnowledgeGarden):
+def ingest_episode(
+    raw_text: str,
+    reference_time: datetime,
+    client: LLMClient,
+    kg: KnowledgeGarden,
+    resolution_client: LLMClient | None = None,
+):
+    """`client` handles extraction (accuracy-sensitive, low call volume relative
+    to resolution). `resolution_client` handles `resolve_entity`'s LLM
+    confirmation tier and `.embed()` calls; defaults to `client` when not given
+    (e.g. ad-hoc/notebook use) so this stays backward-compatible. Callers that
+    want the Groq-extraction/Ollama-resolution split (see llm_clients.py) pass
+    both explicitly — see scripts/run_ingest.py."""
+    resolution_client = resolution_client or client
     episode = Episode(raw_text, reference_time = reference_time)
     known_entities = [
         f"{node.name} ({node.type})"
@@ -67,10 +80,10 @@ def ingest_episode(raw_text: str, reference_time: datetime, client: LLMClient, k
     response = _merge_extractions(chunk_results)
     node_id_mapping = {}
     for node in response.nodes:
-        existing_node_id = resolve_entity(node.name, node.type, kg, client)
+        existing_node_id = resolve_entity(node.name, node.type, kg, resolution_client, context=node.context)
         if existing_node_id is None:
             new_id = normalize(node.name).replace(" ", "_")
-            embedding = client.embed(node.name)
+            embedding = resolution_client.embed(embedding_text(node.name, node.context))
             try:
                 kg.add_node(new_id, node.type, node.name, embedding=embedding)
             except ValueError:

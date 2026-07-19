@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,13 +13,21 @@ from data.sources.gdocs_ingester import ingest_gdocs_documents
 from data.sources.claude_sessions_ingester import ingest_claude_sessions
 
 kg = KnowledgeGarden()
-client = LLMClient()
+# Extraction is accuracy-sensitive and relatively low call volume (once per
+# chunk) -> Groq's 70B model by convention. Entity-resolution confirmation is
+# the highest call-volume, lowest-individual-stakes step (a wrong local call
+# just falls back to "no match") -> local Ollama by convention. No hardcoded
+# fallback here — .env is the single source of truth; if a var is unset,
+# LLMClient falls through to LLM_PROVIDER, then "gemini". See llm_clients.py
+# and IMPROVEMENTS.md's Provider Routing section.
+client = LLMClient(provider=os.getenv("EXTRACTION_LLM_PROVIDER"))
+resolution_client = LLMClient(provider=os.getenv("RESOLVER_LLM_PROVIDER"))
 
 def _run_source(name: str, fn):
     print(f"── {name} " + "─" * max(1, 40 - len(name)))
     try:
         with Run(flow="ingest", meta={"source": name}):
-            result = fn(kg, client)
+            result = fn(kg, client, resolution_client)
     except Exception as e:
         print(f"\n  ✗ {name} aborted: {e}")
         return {"total_fetched": 0, "ingested": 0, "skipped_dedup": 0, "errors": 0}

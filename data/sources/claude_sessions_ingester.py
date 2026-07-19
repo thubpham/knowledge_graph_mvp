@@ -7,7 +7,7 @@ from enrichment.ingester import ingest_episode
 from .claude_sessions_fetcher import fetch_claude_sessions
 
 
-def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient) -> dict:
+def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
     sessions = fetch_claude_sessions()
     ingested = 0
     skipped_dedup = 0
@@ -31,6 +31,7 @@ def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient) -> dict:
                 reference_time=reference_time,
                 client=client,
                 kg=kg,
+                resolution_client=resolution_client,
             )
 
             kg.update_episode(

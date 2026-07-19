@@ -4,6 +4,7 @@ from typing import List
 class ExtractedNode(BaseModel):
     name: str
     type: str
+    context: str
 
 class ExtractedEdge(BaseModel):
     source: str
@@ -28,6 +29,14 @@ class ExtractionResult(BaseModel):
     nodes: List[ExtractedNode]
     edges: List[ExtractedEdge]
     unmapped_entities: List[UnmappedEntity]
+    unmapped_relations: List[UnmappedRelation]
+
+class EntityExtractionResult(BaseModel):
+    nodes: List[ExtractedNode]
+    unmapped_entities: List[UnmappedEntity]
+
+class RelationExtractionResult(BaseModel):
+    edges: List[ExtractedEdge]
     unmapped_relations: List[UnmappedRelation]
 
 class EntityMatchResult(BaseModel):

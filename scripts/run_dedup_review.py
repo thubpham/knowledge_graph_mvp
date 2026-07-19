@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -22,7 +23,13 @@ parser.add_argument("--apply", action="store_true", help="write merges + aliases
 args = parser.parse_args()
 
 kg = KnowledgeGarden()
-client = LLMClient()
+# Dedup review confirmation shares confirm_match() with the live resolver's
+# ambiguous-band tier -> local Ollama by convention, same rationale (high
+# call volume, low individual stakes, a wrong local call just gets rejected/
+# kept apart). No hardcoded fallback here — .env is the single source of
+# truth; if unset, LLMClient falls through to LLM_PROVIDER, then "gemini".
+# See llm_clients.py and IMPROVEMENTS.md's Provider Routing section.
+client = LLMClient(provider=os.getenv("DEDUP_LLM_PROVIDER"))
 
 types_to_scan = [args.type] if args.type else NODE_TYPES
 

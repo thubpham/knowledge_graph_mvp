@@ -80,7 +80,13 @@ exact-name match (fast path) → embedding similarity search via a FalkorDB
 vector index → LLM confirmation for ambiguous cases. Calibrated against real
 `gemini-embedding-001` output so obvious synonyms auto-merge, clearly
 unrelated names are auto-rejected, and only genuinely ambiguous pairs cost
-an LLM call.
+an LLM call. The embedding step embeds `"{name}: {context}"` (a short snippet
+of the source sentence the entity was mentioned in, captured during entity
+extraction), not the bare name alone — short names like "Bob" or "crm" carry
+too little signal on their own for the embedding model to reliably tell apart
+similarly-named-but-different entities. Existing nodes created before this
+change keep their name-only embeddings (not backfilled); only new nodes get
+the richer signal.
 
 **Bi-temporal facts** — every edge tracks `valid_from`/`valid_until`
 alongside `ingested_at`, so you can ask not just "what's true now" but "what
@@ -97,15 +103,49 @@ into one of five traversal patterns (`direct_lookup`, `neighborhood`,
 matching graph traversal, scores results by recency, and synthesizes a
 plain-English answer from the retrieved facts.
 
-**Pluggable LLM provider** — set `LLM_PROVIDER=gemini` (default) or
-`LLM_PROVIDER=concentrate` in `.env` to switch text-generation providers
-without touching code. Embeddings always go through Gemini regardless.
-Optionally set `QUERY_LLM_PROVIDER` to route just the query/answer flow
-(`api.py`'s `/query` endpoint — intent parsing and answer synthesis) to a
-different provider than ingestion/consolidation, e.g.
-`QUERY_LLM_PROVIDER=concentrate` to answer questions via Claude while still
-ingesting via free Gemini. Defaults to whatever `LLM_PROVIDER` resolves to
-if unset.
+**Pluggable LLM provider, per task** — `llm_clients.py` supports five
+text-generation providers (`gemini` | `concentrate` | `openai` | `groq` |
+`ollama`), and each pipeline stage picks its own independently via a
+dedicated env var, instead of one global switch:
+
+| Env var | Drives | Recommended provider | Why |
+|---|---|---|---|
+| `EXTRACTION_LLM_PROVIDER` | entity + relation extraction (`enrichment/extractor.py`) | `groq` | accuracy-sensitive, but low enough call volume (once per chunk) that Groq's free tier keeps up |
+| `CONSOLIDATION_LLM_PROVIDER` | `consolidation/consolidate.py` | `groq` | multi-step reasoning (change-over-time across episodes) needs a capable model |
+| `QUERY_LLM_PROVIDER` | `api.py`'s `/query` route — both intent parsing and answer synthesis | `groq` | same capability bar, low volume |
+| `RESOLVER_LLM_PROVIDER` | `resolve_entity`'s ambiguous-band confirmation (`enrichment/resolver.py`) | `ollama` | highest call volume, lowest individual stakes — a wrong local call just falls back to "no match" |
+| `DEDUP_LLM_PROVIDER` | offline dedup pass confirmation (`enrichment/dedup.py`, same `confirm_match()` helper as the resolver) | `ollama` | same rationale as resolver confirmation |
+
+None of these have a hardcoded default in code — if a var is unset, that
+task's client falls through to `LLM_PROVIDER` (global fallback, defaults to
+`"gemini"` if that's unset too). `.env.example` documents the recommended
+assignment above.
+
+Gemini's free tier caps at 20 `generateContent` calls/day, a hard wall that
+extraction (one call per chunk) and consolidation (one call per pending
+entity) both hit fast — that's why Groq (`GROQ_API_KEY`, free tier, far
+higher limits, model defaults to `llama-3.3-70b-versatile` via `GROQ_MODEL`)
+is the recommended default for those tasks instead. Ollama (`OLLAMA_MODEL`,
+defaults to `llama3.1:8b`) runs entirely locally — no API key, no rate
+limit — but requires the Ollama app installed and running
+(`ollama serve`, or just launch the app) with the model pulled
+(`ollama pull llama3.1:8b`) before `RESOLVER_LLM_PROVIDER=ollama` /
+`DEDUP_LLM_PROVIDER=ollama` will work; if you'd rather skip that local
+setup, point those two at `groq`/`gemini`/`openai` instead.
+
+**Embeddings always go through Gemini** regardless of any provider setting
+above — there's only one embedding source wired up
+(`gemini-embedding-001`), so `GEMINI_API_KEY` is required no matter which
+generation providers you choose.
+
+**Two-pass extraction** — `enrichment/extractor.py` splits entity
+extraction and relation extraction into two separate LLM calls
+(`extract_entities` then `extract_relations`) instead of asking one call to
+produce both. Relation extraction is constrained to only connect entities
+already confirmed in the first pass, rather than simultaneously inventing
+and connecting them — a smaller, more reliable task per call. Costs twice
+the calls, which is why this is only viable now that ingestion defaults to
+a free/high-limit provider like Groq.
 
 **Web UI** — `api.py` (FastAPI) serves a graph visualization and a query box
 at `http://localhost:8000` once running. It's a single static HTML file with
@@ -118,10 +158,16 @@ its API calls — there's no separate front-end build step.
 
 - Python 3.11+
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for FalkorDB)
-- API keys/tokens: a Gemini API key (required — used for embeddings always,
-  and for text generation by default), plus optionally a Concentrate AI key
+- API keys/tokens: a Gemini API key (required — embeddings always go
+  through Gemini regardless of other settings), a Groq API key (recommended
+  default for extraction/consolidation/query — see the Pluggable LLM
+  provider section below), plus optionally a Concentrate AI or OpenAI key
   and/or OAuth credentials for whichever Google/Notion sources you want to
   ingest. See `.env.example` for the full list.
+- [Ollama](https://ollama.com) installed and running locally, with
+  `llama3.1:8b` pulled — only needed if you use the recommended
+  `RESOLVER_LLM_PROVIDER=ollama`/`DEDUP_LLM_PROVIDER=ollama` setting;
+  otherwise skippable (point those at another provider instead).
 
 ### Step 1 — Install dependencies
 
@@ -216,6 +262,15 @@ All entry-point scripts live in `scripts/`:
 - `scripts/smoke_test_consolidation.py` — manual smoke check for the
   ingest → consolidate flow against a handful of hardcoded episodes (not an
   automated test suite).
+- `notebooks/06_gliner_benchmark.ipynb` — standalone benchmark comparing the
+  current LLM extraction pipeline against GLiNER+GLiREL (off-the-shelf,
+  zero-training NER/relation-extraction models) on real ingested episodes,
+  against hand-labeled ground truth. Read-only against the graph; doesn't
+  touch any pipeline file. Not yet run to completion — see
+  `IMPROVEMENTS.md`'s "Extraction & Entity-Resolution Accuracy" section for
+  the research context and adoption decision criteria. Requires
+  `pip install gliner glirel` (not in `requirements.txt`, since this is an
+  experimental/optional benchmark, not a pipeline dependency).
 
 ## 5) Known limitations
 

@@ -7,7 +7,7 @@ from enrichment.ingester import ingest_episode
 from .gdocs_fetcher import fetch_gdocs_documents
 
 
-def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient) -> dict:
+def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
     documents = fetch_gdocs_documents()
     ingested = 0
     skipped_dedup = 0
@@ -31,6 +31,7 @@ def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient) -> dict:
                 reference_time=reference_time,
                 client=client,
                 kg=kg,
+                resolution_client=resolution_client,
             )
 
             kg.update_episode(

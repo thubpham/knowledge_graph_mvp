@@ -7,7 +7,7 @@ from enrichment.ingester import ingest_episode
 from .notion_fetcher import fetch_notion_pages, save_last_fetched
 
 
-def ingest_notion_pages(kg: KnowledgeGarden, client: LLMClient) -> dict:
+def ingest_notion_pages(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
     pages, fetch_started_at = fetch_notion_pages()
     ingested = 0
     skipped_dedup = 0
@@ -31,6 +31,7 @@ def ingest_notion_pages(kg: KnowledgeGarden, client: LLMClient) -> dict:
                 reference_time=reference_time,
                 client=client,
                 kg=kg,
+                resolution_client=resolution_client,
             )
 
             kg.update_episode(

@@ -7,7 +7,7 @@ from enrichment.ingester import ingest_episode
 from .gmail_fetcher import fetch_gmail_messages
 
 
-def ingest_gmail_messages(kg: KnowledgeGarden, client: LLMClient) -> dict:
+def ingest_gmail_messages(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
     messages = fetch_gmail_messages()
     ingested = 0
     skipped_dedup = 0
@@ -31,6 +31,7 @@ def ingest_gmail_messages(kg: KnowledgeGarden, client: LLMClient) -> dict:
                 reference_time=reference_time,
                 client=client,
                 kg=kg,
+                resolution_client=resolution_client,
             )
 
             kg.update_episode(
