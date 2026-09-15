@@ -1,3 +1,16 @@
+# Deliberately NOT wired into scripts/run_ingest.py.
+#
+# claude_sessions_fetcher reads raw .jsonl transcripts straight from
+# ~/.claude/projects/<this-repo>/, including this project's own Claude Code
+# sessions. Running it as part of the normal ingest would:
+#   - ingest unfiltered chat content (secrets/credentials pasted into a
+#     session, other people's data) directly into the graph with no redaction
+#   - be self-referential: sessions about this KG project would get folded
+#     back into the KG itself, creating recursive noise
+#
+# Wire this in only after adding filtering/redaction, and treat it as a
+# separate opt-in source rather than part of the default pipeline.
+
 import json
 from datetime import datetime
 
@@ -5,6 +18,7 @@ from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
 from enrichment.ingester import ingest_episode
 from .claude_sessions_fetcher import fetch_claude_sessions
+from core.failure_log import log_ingest_failure
 
 
 def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
@@ -32,6 +46,7 @@ def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient, resolution_cl
                 client=client,
                 kg=kg,
                 resolution_client=resolution_client,
+                source_type="claude_code_session",
             )
 
             kg.update_episode(
@@ -45,6 +60,7 @@ def ingest_claude_sessions(kg: KnowledgeGarden, client: LLMClient, resolution_cl
         except Exception as e:
             errors += 1
             print(f"  → error, skipped: {e}")
+            log_ingest_failure("claude_sessions", session_id, session["title"], e)
             continue
 
         ingested += 1
