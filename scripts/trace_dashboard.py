@@ -11,9 +11,11 @@ Usage:
     python scripts/trace_dashboard.py --interval 2 --limit 20
 """
 import argparse
+import json
 import sqlite3
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -123,24 +125,65 @@ def _calls_table(conn, limit: int, run_id: str | None) -> Table:
     ).fetchall()
 
     for c in rows:
-        if c["error"] is not None:
+        if c["status"] == "running":
+            style = "yellow"
+            status = "RUNNING"
+            started = datetime.fromisoformat(c["ts"])
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+            latency = f"{elapsed:.0f}s…"
+            tokens = ""
+        elif c["error"] is not None:
             style = "red"
             status = "ERR"
+            latency = f"{c['latency_ms']}ms"
+            tokens = f"{c['prompt_tokens']}/{c['completion_tokens']}/{c['total_tokens']}"
         elif (c["retries"] or 0) > 0:
             style = "yellow"
             status = "OK"
+            latency = f"{c['latency_ms']}ms"
+            tokens = f"{c['prompt_tokens']}/{c['completion_tokens']}/{c['total_tokens']}"
         else:
             style = "green"
             status = "OK"
-        tokens = f"{c['prompt_tokens']}/{c['completion_tokens']}/{c['total_tokens']}"
+            latency = f"{c['latency_ms']}ms"
+            tokens = f"{c['prompt_tokens']}/{c['completion_tokens']}/{c['total_tokens']}"
         table.add_row(
             Text(c["ts"].split("T")[-1].split(".")[0], style=style),
             c["flow"], c["kind"], f"{c['provider']}/{c['model']}",
-            f"{c['latency_ms']}ms", tokens, str(c["retries"]),
+            latency, tokens, str(c["retries"] or 0),
             Text(status, style=style),
             _clip(c["error"] or c["prompt"]),
         )
     return table
+
+
+def _progress_panel(conn) -> Text | None:
+    """Latest `progress` event per still-running run (see
+    `consolidation/consolidate_all.py`'s `Run.event("progress", ...)` calls) —
+    the current/total/ETA that used to be print-only."""
+    rows = conn.execute(
+        """
+        SELECT e.run_id, r.flow, e.payload_json
+        FROM events e
+        JOIN runs r ON r.run_id = e.run_id
+        WHERE r.status = 'running' AND e.step = 'progress'
+          AND e.id = (SELECT MAX(id) FROM events WHERE run_id = e.run_id AND step = 'progress')
+        ORDER BY e.id DESC
+        """
+    ).fetchall()
+    if not rows:
+        return None
+    lines = ["[bold]In-flight progress[/bold]"]
+    for r in rows:
+        p = json.loads(r["payload_json"])
+        pct = 100 * p["current"] / p["total"] if p.get("total") else 0
+        eta_m = p.get("eta_seconds", 0) / 60
+        lines.append(
+            f"  [cyan]{r['flow']}[/cyan] {r['run_id'][:8]}  "
+            f"{p['current']}/{p['total']} ({pct:.0f}%)  "
+            f"ETA {eta_m:.1f}m  — {_clip(p.get('entity', ''), 40)}"
+        )
+    return Text.from_markup("\n".join(lines) + "\n")
 
 
 def render(limit: int, run_id: str | None, flow: str | None):
@@ -148,11 +191,13 @@ def render(limit: int, run_id: str | None, flow: str | None):
         return _waiting_message()
     conn = _connect()
     try:
-        return Group(
-            _rollup_header(conn),
-            _runs_table(conn, limit, flow),
-            _calls_table(conn, limit, run_id),
-        )
+        parts = [_rollup_header(conn)]
+        progress = _progress_panel(conn)
+        if progress:
+            parts.append(progress)
+        parts.append(_runs_table(conn, limit, flow))
+        parts.append(_calls_table(conn, limit, run_id))
+        return Group(*parts)
     finally:
         conn.close()
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
-from .resolver import resolve_entity, normalize
+from .resolver import resolve_entity, slugify
 
 UNMAPPED_LOG_PATH = Path(__file__).parent.parent / ".local" / "unmapped_log.jsonl"
 
@@ -64,11 +64,18 @@ def canonicalize_unmapped_log(kg: KnowledgeGarden, client: LLMClient, log_path: 
                 continue
             existing_id = resolve_entity(entry["name"], canonical_type, kg, client)
             if existing_id is None:
-                new_id = normalize(entry["name"]).replace(" ", "_")
+                new_id = slugify(entry["name"])
                 embedding = client.embed(entry["name"])
                 try:
                     kg.add_node(new_id, canonical_type, entry["name"], embedding=embedding)
                 except ValueError:
+                    # Same silent-cross-type-merge risk as ingester.py's node-creation
+                    # block (see Fix 1 in .local/IN_FLIGHT.md) -- not applying that
+                    # fix here too, since this is a separate write path (a one-off
+                    # maintenance script, not the main ingest loop) and out of scope
+                    # for the slugify/normalize split this touch-up is part of.
+                    # Flagged as a tracked follow-up rather than silently mirroring
+                    # the fix without calling it out.
                     pass  # ID collision with a near-duplicate name — already covered
             resolved_entities += 1
 

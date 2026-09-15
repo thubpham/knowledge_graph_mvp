@@ -371,6 +371,160 @@
     max-width: 220px;
     line-height: 1.4;
   }
+
+  /* ── Pipeline status badge (persistent, low-frequency polled) ─── */
+  .pipeline-badge {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 7px 12px;
+    font-size: 0.76rem;
+    color: var(--text-soft);
+    cursor: pointer;
+  }
+  .pipeline-badge.show { display: inline-flex; }
+  .pipeline-badge .pb-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #d0a030; flex: none;
+    animation: pbPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pbPulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+
+  /* ── Ops overlay (Observability + Pipelines) ────────────────────── */
+  .ops-scrim {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,.28);
+    z-index: 60;
+    display: none;
+  }
+  .ops-scrim.show { display: block; }
+  .ops-panel {
+    position: absolute;
+    top: 4vh; left: 50%; transform: translateX(-50%);
+    width: min(960px, calc(100% - 40px));
+    height: 92vh;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    z-index: 61;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .ops-panel.show { display: flex; }
+  .ops-head {
+    display: flex; align-items: center; gap: 4px;
+    padding: 14px 16px 0;
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+  .ops-head .ops-title { font-size: 0.95rem; font-weight: 600; margin-right: auto; padding-bottom: 12px; }
+  .ops-tab {
+    padding: 8px 14px 12px;
+    font-size: 0.82rem;
+    color: var(--text-faint);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .ops-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .ops-close {
+    width: 26px; height: 26px; border-radius: 6px; border: none;
+    background: transparent; color: var(--text-faint); cursor: pointer;
+    font-size: 1rem; margin-bottom: 12px;
+  }
+  .ops-close:hover { background: var(--panel-soft); color: var(--text); }
+  .ops-body { flex: 1; overflow: hidden; display: none; }
+  .ops-body.active { display: flex; }
+
+  /* Pipelines tab */
+  .pipelines-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .pipeline-card {
+    background: var(--panel-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .pipeline-card-head { display: flex; align-items: center; gap: 10px; }
+  .pipeline-card-name { font-size: 0.88rem; font-weight: 600; }
+  .pipeline-card-desc { font-size: 0.76rem; color: var(--text-faint); margin-top: 2px; }
+  .pipeline-card-status {
+    font-size: 0.72rem; padding: 2px 8px; border-radius: 20px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-faint);
+  }
+  .pipeline-card-status.running { color: #b58324; border-color: #b58324; }
+  .pipeline-run-btn {
+    margin-left: auto;
+    background: var(--text); color: var(--bg);
+    border: none; border-radius: 8px;
+    padding: 7px 14px; font-size: 0.8rem; font-weight: 500;
+    cursor: pointer; white-space: nowrap;
+  }
+  .pipeline-run-btn:hover { opacity: .85; }
+  .pipeline-run-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .pipeline-msg { font-size: 0.76rem; margin-top: 8px; color: var(--text-soft); }
+  .pipeline-msg.error { color: #b3564a; }
+  .log-view {
+    margin-top: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--text-soft);
+    max-height: 240px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* Observability tab */
+  .obs-body { flex: 1; display: flex; overflow: hidden; }
+  .obs-rollup {
+    display: flex; gap: 16px; padding: 10px 16px;
+    font-size: 0.74rem; color: var(--text-faint);
+    border-bottom: 1px solid var(--border);
+    flex: none; width: 100%;
+  }
+  .obs-rollup b { color: var(--text); font-weight: 600; }
+  .obs-runs { width: 42%; border-right: 1px solid var(--border); overflow-y: auto; flex: none; }
+  .obs-detail { flex: 1; overflow-y: auto; padding: 14px 16px; }
+  .run-row {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 0.78rem;
+  }
+  .run-row:hover, .run-row.selected { background: var(--panel-soft); }
+  .run-row-top { display: flex; align-items: center; gap: 6px; }
+  .run-flow { font-weight: 600; }
+  .run-status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .run-status-dot.ok { background: #4d8a5f; }
+  .run-status-dot.error { background: #b3564a; }
+  .run-status-dot.running { background: #d0a030; animation: pbPulse 1.4s ease-in-out infinite; }
+  .run-meta { color: var(--text-faint); font-size: 0.72rem; margin-top: 2px; }
+  .run-stats { color: var(--text-faint); font-size: 0.72rem; margin-top: 2px; }
+
+  .step-row, .call-row {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.76rem;
+    display: flex; gap: 8px; align-items: baseline;
+  }
+  .step-row .s-name, .call-row .c-kind { font-weight: 600; min-width: 110px; }
+  .step-row .s-dur, .call-row .c-lat { color: var(--text-faint); font-family: ui-monospace, monospace; font-size: 0.72rem; margin-left: auto; }
+  .call-row.running .c-lat { color: #b58324; }
+  .call-row.error .c-kind { color: #b3564a; }
+  .obs-section-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); margin: 16px 0 6px; font-weight: 600; }
+  .obs-section-title:first-child { margin-top: 0; }
+  .obs-empty { color: var(--text-faint); font-size: 0.8rem; padding: 20px; text-align: center; }
 </style>
 </head>
 <body>
@@ -397,11 +551,71 @@
   <div class="legend-body" id="legend-body"></div>
 </div>
 
+<div class="pipeline-badge" id="pipeline-badge" title="Click to open Pipelines">
+  <span class="pb-dot"></span><span id="pipeline-badge-text">Nightly running…</span>
+</div>
+
 <div class="toolbar">
+  <div class="tool-btn" id="ops-btn">Ops</div>
   <div class="tool-btn" id="reset-btn">Reset view</div>
 </div>
 
 <div class="answer-wrap" id="answer-wrap"></div>
+
+<div class="ops-scrim" id="ops-scrim"></div>
+<div class="ops-panel" id="ops-panel">
+  <div class="ops-head">
+    <div class="ops-title">Ops</div>
+    <div class="ops-tab active" id="tab-pipelines" data-tab="pipelines">Pipelines</div>
+    <div class="ops-tab" id="tab-observability" data-tab="observability">Observability</div>
+    <button class="ops-close" id="ops-close">✕</button>
+  </div>
+
+  <div class="ops-body active" id="body-pipelines">
+    <div class="pipelines-body">
+      <div class="pipeline-card" data-pipeline="nightly">
+        <div class="pipeline-card-head">
+          <div>
+            <div class="pipeline-card-name">Nightly — Ingest + Dedup</div>
+            <div class="pipeline-card-desc">Notion, Calendar, Gmail, Docs → dedup/alias pass</div>
+          </div>
+          <span class="pipeline-card-status" data-status-for="nightly">idle</span>
+          <button class="pipeline-run-btn" data-run="nightly">Run now</button>
+        </div>
+        <div class="pipeline-msg" data-msg-for="nightly"></div>
+      </div>
+      <div class="pipeline-card" data-pipeline="weekly">
+        <div class="pipeline-card-head">
+          <div>
+            <div class="pipeline-card-name">Weekly — Consolidation</div>
+            <div class="pipeline-card-desc">Folds new episodes into entity summaries + semantic edges</div>
+          </div>
+          <span class="pipeline-card-status" data-status-for="weekly">idle</span>
+          <button class="pipeline-run-btn" data-run="weekly">Run now</button>
+        </div>
+        <div class="pipeline-msg" data-msg-for="weekly"></div>
+      </div>
+      <div>
+        <div class="obs-section-title">Live log</div>
+        <div class="log-view" id="pipeline-log">No pipeline log yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ops-body" id="body-observability">
+    <div class="obs-body">
+      <div style="display:flex; flex-direction:column; width:100%;">
+        <div class="obs-rollup" id="obs-rollup"></div>
+        <div style="display:flex; flex:1; overflow:hidden;">
+          <div class="obs-runs" id="obs-runs"></div>
+          <div class="obs-detail" id="obs-detail">
+            <div class="obs-empty">Select a run to see its step-by-step timing and LLM calls.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="drawer" id="drawer">
   <div class="drawer-head">
@@ -994,6 +1208,33 @@ function buildChips() {
 }
 
 // ── Query flow ───────────────────────────────────────────────────────────
+// Human-readable labels for the raw step/kind identifiers written to
+// traces.db by retrieval/query.py and llm_clients.py -- see
+// describeQueryProgress() below.
+const QUERY_STEP_LABEL = {
+  intent_parse: 'Parsed question', entity_lookup: 'Resolved entity',
+  traversal: 'Traversed graph', scoring: 'Scored results',
+};
+const QUERY_CALL_LABEL = {
+  query_intent: 'Parsing question', resolve_confirm: 'Confirming entity match',
+  embed: 'Embedding', generate_text: 'Writing answer',
+};
+
+function describeQueryProgress(poll) {
+  const calls = poll.calls || [];
+  const running = calls.find(c => c.status === 'running');
+  if (running) {
+    const label = QUERY_CALL_LABEL[running.kind] || running.kind;
+    return `${label} — ${running.provider}/${running.model || ''} (${running.elapsed_s ?? 0}s)`;
+  }
+  const steps = poll.steps || [];
+  if (steps.length) {
+    const last = steps[steps.length - 1];
+    return QUERY_STEP_LABEL[last.step] || last.step;
+  }
+  return 'Starting…';
+}
+
 async function runQuery() {
   const question = qInput.value.trim();
   if (!question) return;
@@ -1003,21 +1244,43 @@ async function runQuery() {
   const askBtn = document.getElementById('ask-btn');
   askBtn.disabled = true;
   statusBar.className = '';
-  statusBar.innerHTML = '<span class="spinner"></span>Querying graph…';
+  statusBar.innerHTML = '<span class="spinner"></span>Starting…';
 
-  let data;
+  // Async: POST returns a run_id immediately (no long-held connection --
+  // this query can take minutes on a local model, see .local/IN_FLIGHT.md),
+  // then poll for progress using the exact same steps/llm_calls data the
+  // terminal trace_dashboard.py and the Ops > Observability tab render, so
+  // "why is this slow" has a visible answer instead of a silent spinner.
+  let runId;
   try {
-    const resp = await fetch('/query', {
+    const startResp = await fetch('/query/async', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question }),
     });
-    data = await resp.json();
+    ({ run_id: runId } = await startResp.json());
   } catch (err) {
     statusBar.className = 'error';
     statusBar.textContent = 'Network error: ' + err.message;
     askBtn.disabled = false;
     return;
+  }
+
+  let data;
+  while (true) {
+    let poll;
+    try {
+      const r = await fetch(`/query/async/${runId}`);
+      poll = await r.json();
+    } catch (err) {
+      statusBar.className = 'error';
+      statusBar.textContent = 'Network error: ' + err.message;
+      askBtn.disabled = false;
+      return;
+    }
+    if (poll.status === 'done') { data = poll.result; break; }
+    statusBar.innerHTML = '<span class="spinner"></span>' + esc(describeQueryProgress(poll));
+    await new Promise(resolve => setTimeout(resolve, 900));
   }
   askBtn.disabled = false;
 
@@ -1132,6 +1395,177 @@ function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Ops panel: Observability + Pipelines ────────────────────────────────
+// Everything here reads endpoints backed by .local/traces.db and
+// scripts/nightly.sh|weekly.sh -- see api.py's "Observability" and
+// "Pipeline triggers" sections. Read-only except the two trigger buttons.
+const opsScrim = document.getElementById('ops-scrim');
+const opsPanel = document.getElementById('ops-panel');
+let opsOpen = false;
+let activeOpsTab = 'pipelines';
+let opsFastTimer = null;
+let selectedRunId = null;
+
+function openOps() {
+  opsOpen = true;
+  opsScrim.classList.add('show');
+  opsPanel.classList.add('show');
+  refreshPipelinePanel();
+  if (activeOpsTab === 'observability') loadObsRuns();
+  clearInterval(opsFastTimer);
+  // Single interval driving whichever tab is visible, rather than two
+  // always-on timers -- only the active tab's data actually needs refreshing.
+  opsFastTimer = setInterval(() => {
+    if (!opsOpen) return;
+    if (activeOpsTab === 'pipelines') refreshPipelinePanel();
+    else { loadObsRuns(); if (selectedRunId) loadObsDetail(selectedRunId); }
+  }, 3000);
+}
+function closeOps() {
+  opsOpen = false;
+  opsScrim.classList.remove('show');
+  opsPanel.classList.remove('show');
+  clearInterval(opsFastTimer);
+}
+function switchOpsTab(tab) {
+  activeOpsTab = tab;
+  document.querySelectorAll('.ops-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('body-pipelines').classList.toggle('active', tab === 'pipelines');
+  document.getElementById('body-observability').classList.toggle('active', tab === 'observability');
+  if (tab === 'observability') loadObsRuns();
+}
+document.getElementById('ops-btn').onclick = openOps;
+document.getElementById('ops-close').onclick = closeOps;
+opsScrim.onclick = closeOps;
+document.querySelectorAll('.ops-tab').forEach(t => { t.onclick = () => switchOpsTab(t.dataset.tab); });
+document.getElementById('pipeline-badge').onclick = () => { openOps(); switchOpsTab('pipelines'); };
+
+// Low-frequency background poll so the badge stays accurate even with the
+// Ops panel closed -- this is the "don't need to open the terminal to
+// notice a run finished" behavior. 15s: frequent enough to feel live for a
+// job that runs for tens of minutes to hours, infrequent enough to be a
+// no-op cost the rest of the time.
+async function pollPipelineBadge() {
+  try {
+    const r = await fetch('/pipelines/status');
+    const d = await r.json();
+    const badge = document.getElementById('pipeline-badge');
+    if (d.running) {
+      document.getElementById('pipeline-badge-text').textContent =
+        (d.pipeline === 'weekly' ? 'Weekly' : 'Nightly') + ' running…';
+      badge.classList.add('show');
+    } else {
+      badge.classList.remove('show');
+    }
+  } catch (e) { /* background convenience poll -- fail silently */ }
+}
+setInterval(pollPipelineBadge, 15000);
+pollPipelineBadge();
+
+async function refreshPipelinePanel() {
+  try {
+    const r = await fetch('/pipelines/status');
+    const d = await r.json();
+    ['nightly', 'weekly'].forEach(name => {
+      const statusEl = document.querySelector(`[data-status-for="${name}"]`);
+      const running = d.running && d.pipeline === name;
+      statusEl.textContent = running ? 'running' : (d.running ? 'blocked' : 'idle');
+      statusEl.classList.toggle('running', running);
+      // Both buttons disable when ANYTHING is running -- nightly and weekly
+      // share one single-instance lock (scripts/lib/kg_env.sh), so a second
+      // trigger would just self-abort rather than queue.
+      document.querySelector(`[data-run="${name}"]`).disabled = d.running;
+    });
+    const logEl = document.getElementById('pipeline-log');
+    logEl.textContent = (d.log_tail && d.log_tail.length) ? d.log_tail.join('\n') : 'No pipeline log yet.';
+    logEl.scrollTop = logEl.scrollHeight;
+  } catch (e) { /* transient poll failure -- keep showing last good state */ }
+}
+
+document.querySelectorAll('.pipeline-run-btn').forEach(btn => {
+  btn.onclick = () => triggerPipeline(btn.dataset.run);
+});
+
+async function triggerPipeline(name) {
+  const msgEl = document.querySelector(`[data-msg-for="${name}"]`);
+  msgEl.className = 'pipeline-msg';
+  msgEl.textContent = 'Starting…';
+  document.querySelectorAll('.pipeline-run-btn').forEach(b => b.disabled = true);
+  try {
+    const r = await fetch(`/pipelines/${name}`, { method: 'POST' });
+    const d = await r.json();
+    msgEl.className = d.started ? 'pipeline-msg' : 'pipeline-msg error';
+    msgEl.textContent = d.started ? 'Started.' : d.message;
+  } catch (e) {
+    msgEl.className = 'pipeline-msg error';
+    msgEl.textContent = 'Network error: ' + e.message;
+  }
+  refreshPipelinePanel();
+  pollPipelineBadge();
+}
+
+async function loadObsRuns() {
+  try {
+    const [rollupR, runsR] = await Promise.all([
+      fetch('/observability/rollup'), fetch('/observability/runs?limit=40'),
+    ]);
+    const rollup = await rollupR.json();
+    const runs = await runsR.json();
+    document.getElementById('obs-rollup').innerHTML =
+      `<span><b>${rollup.runs}</b> runs</span><span><b>${rollup.calls}</b> calls</span>` +
+      `<span><b>${rollup.tokens.toLocaleString()}</b> tokens</span><span><b>${rollup.errors}</b> errors</span>`;
+    const runsEl = document.getElementById('obs-runs');
+    if (!runs.length) { runsEl.innerHTML = '<div class="obs-empty">No runs yet.</div>'; return; }
+    runsEl.innerHTML = runs.map(r => {
+      const label = (r.meta.question || r.meta.source || '').toString().slice(0, 60);
+      const time = r.started_at ? r.started_at.split('T')[1].split('.')[0] : '';
+      return `
+        <div class="run-row ${r.run_id === selectedRunId ? 'selected' : ''}" data-run-id="${esc(r.run_id)}">
+          <div class="run-row-top">
+            <span class="run-status-dot ${esc(r.status)}"></span>
+            <span class="run-flow">${esc(r.flow)}</span>
+          </div>
+          <div class="run-meta">${esc(label)}</div>
+          <div class="run-stats">${r.calls} calls · ${r.tokens.toLocaleString()} tok · ${esc(time)}</div>
+        </div>`;
+    }).join('');
+    runsEl.querySelectorAll('.run-row').forEach(row => {
+      row.onclick = () => loadObsDetail(row.dataset.runId);
+    });
+  } catch (e) { /* transient poll failure -- keep showing last good state */ }
+}
+
+async function loadObsDetail(runId) {
+  selectedRunId = runId;
+  document.querySelectorAll('.run-row').forEach(r => r.classList.toggle('selected', r.dataset.runId === runId));
+  try {
+    const r = await fetch(`/observability/runs/${runId}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const stepsHtml = d.steps.length ? d.steps.map(s => {
+      const extra = Object.fromEntries(Object.entries(s).filter(([k]) => !['step', 'ts', 'duration_ms'].includes(k)));
+      return `
+        <div class="step-row">
+          <span class="s-name">${esc(s.step)}</span>
+          <span style="color:var(--text-faint)">${esc(JSON.stringify(extra))}</span>
+          <span class="s-dur">${s.duration_ms != null ? s.duration_ms + 'ms' : ''}</span>
+        </div>`;
+    }).join('') : '<div class="obs-empty">No step events for this run.</div>';
+    const callsHtml = d.calls.length ? d.calls.map(c => `
+      <div class="call-row ${esc(c.status)}">
+        <span class="c-kind">${esc(c.kind)}</span>
+        <span style="color:var(--text-faint)">${esc(c.provider)}/${esc(c.model || '')}</span>
+        <span class="c-lat">${c.status === 'running' ? (c.elapsed_s ?? 0) + 's…' : (c.latency_ms != null ? c.latency_ms + 'ms' : '?')}</span>
+      </div>`).join('') : '<div class="obs-empty">No LLM calls for this run.</div>';
+    document.getElementById('obs-detail').innerHTML = `
+      <div class="obs-section-title">${esc(d.flow)} — ${esc(d.status)}</div>
+      <div style="font-size:0.76rem; color:var(--text-faint); margin-bottom:8px;">${esc(JSON.stringify(d.meta))}</div>
+      <div class="obs-section-title">Steps</div>${stepsHtml}
+      <div class="obs-section-title">LLM calls</div>${callsHtml}
+    `;
+  } catch (e) { /* transient poll failure -- keep showing last good state */ }
 }
 
 loadGraph().then(buildChips);

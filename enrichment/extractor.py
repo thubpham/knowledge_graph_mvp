@@ -5,23 +5,29 @@ from .extraction_schema import *
 
 def extract_entities(raw_text: str, client: LLMClient, known_entities: list[str] | None = None) -> EntityExtractionResult:
     known_entities_text = "\n".join(known_entities) if known_entities else "(none)"
-    prompt = (
-        ENTITY_EXTRACTION_PROMPT
+    user_prompt = (
+        ENTITY_EXTRACTION_USER_PROMPT
         .replace("{known_entities}", known_entities_text)
         .replace("{text}", raw_text)
     )
-    response = client.generate_gemini(prompt, schema_type=EntityExtractionResult)
+    response = client.generate_gemini(
+        ENTITY_EXTRACTION_SYSTEM_PROMPT, user_prompt,
+        schema_type=EntityExtractionResult, kind="extract_entities",
+    )
     return EntityExtractionResult.model_validate_json(response)
 
 
 def extract_relations(raw_text: str, entities: list[ExtractedNode], client: LLMClient) -> RelationExtractionResult:
     entities_text = "\n".join(f"{n.name} ({n.type})" for n in entities) if entities else "(none)"
-    prompt = (
-        RELATION_EXTRACTION_PROMPT
+    user_prompt = (
+        RELATION_EXTRACTION_USER_PROMPT
         .replace("{entities}", entities_text)
         .replace("{text}", raw_text)
     )
-    response = client.generate_gemini(prompt, schema_type=RelationExtractionResult)
+    response = client.generate_gemini(
+        RELATION_EXTRACTION_SYSTEM_PROMPT, user_prompt,
+        schema_type=RelationExtractionResult, kind="extract_relations",
+    )
     return RelationExtractionResult.model_validate_json(response)
 
 

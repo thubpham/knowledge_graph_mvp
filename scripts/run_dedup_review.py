@@ -15,12 +15,14 @@ NODE_TYPES = ["person", "service", "team", "tool", "concept", "event", "document
 
 parser = argparse.ArgumentParser(
     description="Offline entity-dedup pass: clusters same-type nodes by embedding "
-    "distance and proposes merges (tombstone-based, never deletes). Dry-run by "
-    "default — pass --apply to actually write."
+    "distance and proposes merges (tombstone-based, never deletes). Applies by "
+    "default — pass --dry-run to only print proposals without writing."
 )
 parser.add_argument("--type", choices=NODE_TYPES, help="restrict to one node type (default: all)")
-parser.add_argument("--apply", action="store_true", help="write merges + aliases (default: dry-run)")
+parser.add_argument("--dry-run", action="store_true",
+                     help="print proposals only, don't write merges/aliases (default: apply)")
 args = parser.parse_args()
+apply = not args.dry_run
 
 kg = KnowledgeGarden()
 # Dedup review confirmation shares confirm_match() with the live resolver's
@@ -33,7 +35,9 @@ client = LLMClient(provider=os.getenv("DEDUP_LLM_PROVIDER"))
 
 types_to_scan = [args.type] if args.type else NODE_TYPES
 
-totals = {"auto": 0, "llm": 0, "rejected": 0}
+# No "auto" bucket: review_cluster() never blind-auto-merges (see its
+# docstring) -- every proposal is either "llm" (confirmed) or "rejected".
+totals = {"llm": 0, "rejected": 0}
 
 for node_type in types_to_scan:
     clusters = find_merge_candidates(kg, node_type)
@@ -49,7 +53,7 @@ for node_type in types_to_scan:
                 f'  [{p["method"]:>8}] "{p["loser_name"]}" ({p["loser_id"]}) -> '
                 f'"{p["winner_name"]}" ({p["winner_id"]}) — distance={p["distance"]:.3f}'
             )
-            if not args.apply:
+            if not apply:
                 continue
             if p["method"] == "rejected":
                 log_rejected(p)
@@ -59,8 +63,10 @@ for node_type in types_to_scan:
     print()
 
 print("── Summary " + "─" * 30)
-print(f"  Auto-merged:    {totals['auto']}")
 print(f"  LLM-confirmed:  {totals['llm']}")
 print(f"  Rejected:       {totals['rejected']}")
-if not args.apply and (totals["auto"] or totals["llm"] or totals["rejected"]):
-    print("\n  Dry-run only — no writes made. Re-run with --apply to merge and log.")
+if apply:
+    print(f"\n  Applied — {totals['llm']} merge(s) written, "
+          f"{totals['rejected']} rejection(s) logged to dedup_review_log.jsonl.")
+elif totals["llm"] or totals["rejected"]:
+    print("\n  Dry-run only — no writes made. Re-run without --dry-run to merge and log.")

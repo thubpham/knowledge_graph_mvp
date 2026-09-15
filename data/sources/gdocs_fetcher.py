@@ -40,7 +40,7 @@ def _load_last_fetched() -> datetime | None:
     return None
 
 
-def _save_last_fetched(dt: datetime):
+def save_last_fetched(dt: datetime):
     LAST_FETCHED_PATH.write_text(json.dumps({"last_fetched": dt.isoformat()}))
 
 
@@ -53,7 +53,7 @@ def _doc_to_text(name: str, body: str, owner: str) -> str:
     return "\n".join(parts)
 
 
-def fetch_gdocs_documents(days_back: int = 180, max_results: int = 100) -> list[dict]:
+def fetch_gdocs_documents(days_back: int = 30, max_results: int = 100) -> tuple[list[dict], datetime]:
     fetch_started_at = datetime.now(timezone.utc)
     last_fetched = _load_last_fetched()
 
@@ -113,6 +113,9 @@ def fetch_gdocs_documents(days_back: int = 180, max_results: int = 100) -> list[
         if not page_token or len(results) >= max_results:
             break
 
-    _save_last_fetched(fetch_started_at)
+    # Cursor is deliberately NOT saved here -- see the ingester, which saves it
+    # only after every item has actually been ingested. Saving at fetch time
+    # orphans everything fetched if the run dies mid-ingestion. Mirrors the
+    # notion_fetcher/notion_ingester split.
     print(f"Done. {len(results)} qualifying documents fetched.")
-    return results
+    return results, fetch_started_at

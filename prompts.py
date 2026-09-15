@@ -1,4 +1,11 @@
-ENTITY_EXTRACTION_PROMPT = """
+# Every prompt is split into a SYSTEM half (role, schema, rules, vocabulary,
+# worked example — byte-identical across every call, so provider-side prompt
+# caching can key on it) and a USER half (the "### Current Task" block, built
+# fresh per call from the dynamic placeholders it names). Callers pass both
+# halves to LLMClient.generate_gemini()/generate_text() separately — never
+# concatenate them back into one string, or the caching benefit is lost.
+
+ENTITY_EXTRACTION_SYSTEM_PROMPT = """
 You are an expert Information Extraction system. Your task is to analyze the provided Natural Language Text and extract only the entities (nodes) mentioned in it, into a strict, valid JSON format based on the provided schema. Do not extract relationships — that is a separate task performed later.
 
 ### Schema Definition
@@ -25,10 +32,6 @@ You must output a single JSON object containing exactly two keys: "nodes" and "u
 ### Allowed Vocabulary
 Node types: person | service | team | tool | concept | event | document
 
-### Known Entities (optional coreference targets)
-These entities already exist in the knowledge graph from recent prior text (other emails, docs, meetings, etc). They are provided ONLY to help you resolve pronouns/vague references that clearly point to one of them — do not treat their presence here as license to invent facts about them beyond what THIS text states, and do not force a match when unsure ("when in doubt, don't match" — a missed resolution is cheaper to fix than a wrong one):
-{known_entities}
-
 ### Example
 Input Text: "Alice joined the infra team last Monday. The infra team owns the auth service, which depends on Postgres. Alice is also the on-call engineer for auth service this week."
 
@@ -42,13 +45,19 @@ Output:
   ],
   "unmapped_entities": []
 }
+"""
+
+ENTITY_EXTRACTION_USER_PROMPT = """
+### Known Entities (optional coreference targets)
+These entities already exist in the knowledge graph from recent prior text (other emails, docs, meetings, etc). They are provided ONLY to help you resolve pronouns/vague references that clearly point to one of them — do not treat their presence here as license to invent facts about them beyond what THIS text states, and do not force a match when unsure ("when in doubt, don't match" — a missed resolution is cheaper to fix than a wrong one):
+{known_entities}
 
 ### Current Task
 Input Text: "{text}"
 Output:
 """
 
-RELATION_EXTRACTION_PROMPT = """
+RELATION_EXTRACTION_SYSTEM_PROMPT = """
 You are an expert Information Extraction system. You have already been given the list of entities present in the provided Natural Language Text. Your task now is ONLY to extract the directed relationships (edges) between those entities, into a strict, valid JSON format based on the provided schema.
 
 ### Schema Definition
@@ -86,9 +95,6 @@ Relation types: MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | 
 - AUTHORED: a person wrote/created a document (person -> document)
 - REFERENCES: a document or event references another document, tool, or concept (document/event -> concept/tool/document)
 
-### Entities (the only valid source/target names)
-{entities}
-
 ### Example
 Input Text: "Alice joined the infra team last Monday. The infra team owns the auth service, which depends on Postgres. Alice is also the on-call engineer for auth service this week."
 Entities: Alice (person), infra team (team), auth service (service), Postgres (tool)
@@ -110,7 +116,9 @@ Output:
     }
   ]
 }
+"""
 
+RELATION_EXTRACTION_USER_PROMPT = """
 ### Current Task
 Input Text: "{text}"
 Entities:
@@ -119,15 +127,8 @@ Entities:
 Output:
 """
 
-ENTITY_MATCH_PROMPT = """
-You are resolving whether a newly-extracted entity refers to the same real-world entity as one of several existing candidates in a knowledge graph.
-
-### New Entity
-Name: {new_name}
-Type: {new_type}
-
-### Candidates
-{candidates}
+ENTITY_MATCH_SYSTEM_PROMPT = """
+You are resolving whether a newly-extracted entity refers to the same real-world entity as one of several existing candidates in a knowledge graph. The candidates are shown in a numbered list; your job is to decide which number, if any, refers to the same real-world entity as the New Entity.
 
 ### Instructions
 - Decide if the New Entity is the same real-world entity as exactly one of the candidates (e.g. an abbreviation, synonym, alternate phrasing, or naming variant of the same thing).
@@ -136,9 +137,28 @@ Type: {new_type}
 
 ### Output Format
 Return ONLY a valid JSON object with these keys:
-- "match_name": the exact "name" string of the matching candidate, or null if none match.
+- "match_index": the number shown beside the matching candidate in the numbered list (an integer from 1 to the number of candidates listed), or null if none match.
 - "reason": a short justification for your decision.
 
+### Example
+New Entity: "Postgres" (type: tool)
+Candidates:
+1. name="PostgreSQL", type=tool
+2. name="Redis", type=tool
+
+Output:
+{"match_index": 1, "reason": "\\"Postgres\\" is a common shorthand for \\"PostgreSQL\\" — same tool."}
+
+New Entity: "Alice" (type: person)
+Candidates:
+1. name="Alicia Gomez", type=person
+2. name="Alice Chen", type=person
+
+Output:
+{"match_index": null, "reason": "Two distinct plausible people share a similar first name; not confident which (or whether either) is the same Alice, so no match."}
+"""
+
+ENTITY_MATCH_USER_PROMPT = """
 ### Current Task
 New Entity: {new_name} (type: {new_type})
 Candidates:
@@ -147,7 +167,7 @@ Candidates:
 Output:
 """
 
-QUERY_INTENT_PROMPT = """
+QUERY_INTENT_SYSTEM_PROMPT = """
 You are a query router for a knowledge graph. Given a natural language question, classify it into exactly one traversal pattern and extract the parameters needed to execute it.
 
 ### Traversal Patterns
@@ -183,40 +203,38 @@ Output: {"pattern": "path", "anchor_entity": "alice", "relation": null, "directi
 
 Question: "What does the infra team work with?"
 Output: {"pattern": "neighborhood", "anchor_entity": "infra_team", "relation": null, "direction": null, "target_entity": null}
+"""
 
+QUERY_INTENT_USER_PROMPT = """
 ### Current Task
 Question: "{question}"
 Output:
 """
 
-SYNTHESIS_PROMPT = """
+SYNTHESIS_SYSTEM_PROMPT = """
 You are answering a question using only the facts retrieved from a personal knowledge graph.
 
-Question: {question}
-
-Retrieved facts:
-{facts}
-
-Instructions:
+### Instructions
 - Answer the question directly and concisely using only the facts above.
 - Write in plain prose, 2-4 sentences max.
 - If the facts don't fully answer the question, say what you do know and note the gap.
 - Do not invent anything beyond the retrieved facts.
 """
 
-CONSOLIDATION_PROMPT = """
+SYNTHESIS_USER_PROMPT = """
+### Current Task
+Question: {question}
+
+Retrieved facts:
+{facts}
+
+Output:
+"""
+
+CONSOLIDATION_SYSTEM_PROMPT = """
 You are consolidating episodic memory about an entity into semantic knowledge.
 
 You will be given an entity, its existing semantic summary (from prior consolidation runs, if any), and a chronological list of NEW raw episodes that mention it since the last consolidation. Your task is to UPDATE the existing summary in light of the new episodes — not re-derive it from scratch — and determine what is durably, currently true about this entity.
-
-### Entity
-{entity_name}
-
-### Existing Summary (from prior consolidation; may be "None yet" if this is the first run)
-{existing_summary}
-
-### New Raw Episodes Since Last Consolidation (ordered oldest to newest)
-{episodes}
 
 ### Instructions
 1. Treat the Existing Summary as already-established durable fact. Read the New Raw Episodes in order and merge them into it.
@@ -259,7 +277,9 @@ Output:
     "Alice mentioned grabbing coffee with bob before a standup"
   ]
 }
+"""
 
+CONSOLIDATION_USER_PROMPT = """
 ### Current Task
 Entity: {entity_name}
 Existing Summary (from prior consolidation; may be "None yet" if this is the first run):

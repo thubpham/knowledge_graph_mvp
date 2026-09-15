@@ -27,6 +27,10 @@ class Edge:
         self.confidence = 1.0
         self.source_type = None
         self.source_id = None
+        # Gmail-specific relevance signal (e.g. "personal", "updates_important")
+        # -- see retrieval/scoring.py's GMAIL_CATEGORY_WEIGHT. None for every
+        # non-Gmail source and for edges created before this field existed.
+        self.source_category = None
         self.ingested_at = datetime.now()
         self.extracted_by = None
 

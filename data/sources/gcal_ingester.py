@@ -4,11 +4,12 @@ from datetime import datetime
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
 from enrichment.ingester import ingest_episode
-from .gcal_fetcher import fetch_gcal_events
+from .gcal_fetcher import fetch_gcal_events, save_last_fetched
+from core.failure_log import log_ingest_failure
 
 
 def ingest_gcal_events(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
-    events = fetch_gcal_events()
+    events, fetch_started_at = fetch_gcal_events()
     ingested = 0
     skipped_dedup = 0
     errors = 0
@@ -32,6 +33,7 @@ def ingest_gcal_events(kg: KnowledgeGarden, client: LLMClient, resolution_client
                 client=client,
                 kg=kg,
                 resolution_client=resolution_client,
+                source_type="gcal_event",
             )
 
             kg.update_episode(
@@ -48,9 +50,19 @@ def ingest_gcal_events(kg: KnowledgeGarden, client: LLMClient, resolution_client
         except Exception as e:
             errors += 1
             print(f"  → error, skipped: {e}")
+            log_ingest_failure("gcal", event_id, event["title"], e)
             continue
 
         ingested += 1
+
+    # Advance the fetch cursor only once everything is actually in the graph.
+    # Anything still unsaved gets re-fetched next run rather than silently
+    # orphaned behind an advanced cursor. Mirrors notion_ingester.
+    if errors == 0:
+        save_last_fetched(fetch_started_at)
+    else:
+        print(f"  ⚠ {errors} event(s) failed to ingest — not advancing the fetch "
+              f"cursor, so they'll be retried next run.")
 
     return {
         "total_fetched": len(events),

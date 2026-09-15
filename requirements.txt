@@ -5,7 +5,9 @@ python-dotenv
 httpx
 pydantic
 google-genai
+anthropic
 google-auth
 google-auth-oauthlib
 google-api-python-client
 rich
+mcp

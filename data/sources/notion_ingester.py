@@ -5,6 +5,7 @@ from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
 from enrichment.ingester import ingest_episode
 from .notion_fetcher import fetch_notion_pages, save_last_fetched
+from core.failure_log import log_ingest_failure
 
 
 def ingest_notion_pages(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
@@ -32,6 +33,7 @@ def ingest_notion_pages(kg: KnowledgeGarden, client: LLMClient, resolution_clien
                 client=client,
                 kg=kg,
                 resolution_client=resolution_client,
+                source_type="notion_page",
             )
 
             kg.update_episode(
@@ -43,6 +45,7 @@ def ingest_notion_pages(kg: KnowledgeGarden, client: LLMClient, resolution_clien
         except Exception as e:
             errors += 1
             print(f"  → error, skipped: {e}")
+            log_ingest_failure("notion", page_id, page["page_title"], e)
             continue
 
         ingested += 1

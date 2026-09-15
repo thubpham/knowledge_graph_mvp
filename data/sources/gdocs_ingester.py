@@ -4,11 +4,12 @@ from datetime import datetime
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
 from enrichment.ingester import ingest_episode
-from .gdocs_fetcher import fetch_gdocs_documents
+from .gdocs_fetcher import fetch_gdocs_documents, save_last_fetched
+from core.failure_log import log_ingest_failure
 
 
 def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient, resolution_client: LLMClient | None = None) -> dict:
-    documents = fetch_gdocs_documents()
+    documents, fetch_started_at = fetch_gdocs_documents()
     ingested = 0
     skipped_dedup = 0
     errors = 0
@@ -32,6 +33,7 @@ def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient, resolution_cl
                 client=client,
                 kg=kg,
                 resolution_client=resolution_client,
+                source_type="gdocs_document",
             )
 
             kg.update_episode(
@@ -47,9 +49,19 @@ def ingest_gdocs_documents(kg: KnowledgeGarden, client: LLMClient, resolution_cl
         except Exception as e:
             errors += 1
             print(f"  → error, skipped: {e}")
+            log_ingest_failure("gdocs", document_id, doc["title"], e)
             continue
 
         ingested += 1
+
+    # Advance the fetch cursor only once everything is actually in the graph.
+    # Anything still unsaved gets re-fetched next run rather than silently
+    # orphaned behind an advanced cursor. Mirrors notion_ingester.
+    if errors == 0:
+        save_last_fetched(fetch_started_at)
+    else:
+        print(f"  ⚠ {errors} document(s) failed to ingest — not advancing the fetch "
+              f"cursor, so they'll be retried next run.")
 
     return {
         "total_fetched": len(documents),

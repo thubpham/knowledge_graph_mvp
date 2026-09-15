@@ -124,8 +124,13 @@ assignment above.
 Gemini's free tier caps at 20 `generateContent` calls/day, a hard wall that
 extraction (one call per chunk) and consolidation (one call per pending
 entity) both hit fast — that's why Groq (`GROQ_API_KEY`, free tier, far
-higher limits, model defaults to `llama-3.3-70b-versatile` via `GROQ_MODEL`)
-is the recommended default for those tasks instead. Ollama (`OLLAMA_MODEL`,
+higher limits, model defaults to `openai/gpt-oss-120b` via `GROQ_MODEL` — one
+of only two Groq-hosted models that support the strict `json_schema`
+structured-output mode `_GroqProvider` sends (the other, `gpt-oss-20b`, is
+cheaper but has less capacity — 120b was chosen to stay closer to the
+accuracy bar the dense 70b model it replaces was picked for);
+`llama-3.3-70b-versatile` 400s on every call) is the recommended default for
+those tasks instead. Ollama (`OLLAMA_MODEL`,
 defaults to `llama3.1:8b`) runs entirely locally — no API key, no rate
 limit — but requires the Ollama app installed and running
 (`ollama serve`, or just launch the app) with the model pulled

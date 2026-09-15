@@ -39,7 +39,7 @@ def _load_last_fetched() -> datetime | None:
     return None
 
 
-def _save_last_fetched(dt: datetime):
+def save_last_fetched(dt: datetime):
     LAST_FETCHED_PATH.write_text(json.dumps({"last_fetched": dt.isoformat()}))
 
 
@@ -76,7 +76,7 @@ def _event_to_text(event: dict) -> str:
     return "\n".join(parts)
 
 
-def fetch_gcal_events(days_back: int = 180) -> list[dict]:
+def fetch_gcal_events(days_back: int = 30) -> tuple[list[dict], datetime]:
     fetch_started_at = datetime.now(timezone.utc)
     last_fetched = _load_last_fetched()
 
@@ -131,6 +131,9 @@ def fetch_gcal_events(days_back: int = 180) -> list[dict]:
         if not page_token:
             break
 
-    _save_last_fetched(fetch_started_at)
+    # Cursor is deliberately NOT saved here -- see the ingester, which saves it
+    # only after every item has actually been ingested. Saving at fetch time
+    # orphans everything fetched if the run dies mid-ingestion. Mirrors the
+    # notion_fetcher/notion_ingester split.
     print(f"Done. {len(results)} qualifying events fetched.")
-    return results
+    return results, fetch_started_at

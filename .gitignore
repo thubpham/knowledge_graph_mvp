@@ -6,3 +6,6 @@ __pycache__/
 # All personal/runtime state: OAuth tokens & credentials, sync watermarks,
 # ingestion logs, and local-only docs (SOURCES.md, IMPROVEMENTS.md).
 .local/
+
+# Reference papers accumulate and shouldn't bloat git history.
+research/

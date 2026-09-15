@@ -40,5 +40,5 @@ class RelationExtractionResult(BaseModel):
     unmapped_relations: List[UnmappedRelation]
 
 class EntityMatchResult(BaseModel):
-    match_name: str | None
+    match_index: int | None
     reason: str

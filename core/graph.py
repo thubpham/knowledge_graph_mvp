@@ -58,6 +58,33 @@ class KnowledgeGarden:
         node.merged_into = props.get('merged_into')
         return node
 
+    # Explicit projection for the *bulk* node fetches below, instead of
+    # `RETURN n`. A whole node carries the 768-float `embedding` property, and
+    # `_node_from_props` above never reads it -- so `RETURN n` was shipping
+    # ~1.66M floats across the wire per full-graph fetch and deserializing them
+    # only to discard them. Measured on a 2167-node graph (2026-07-26):
+    #   RETURN n                    -> 2244 ms
+    #   this projection             ->   23 ms   (98x)
+    # That cost was paid on the query path (resolve_entity tier 1 with
+    # node_type=None), on every one of ~5k resolve_entity calls per ingest
+    # (via get_nodes_by_type), and by consolidation's pending-node scan.
+    # Keep this list in sync with _node_from_props / _node_from_row.
+    _NODE_COLS = ("n.id, n.type, n.name, n.summary, n.last_episode_at, "
+                  "n.last_consolidated_at, n.consolidation_run_id, n.created_at, "
+                  "n.merged_into")
+
+    def _node_from_row(self, row) -> Node:
+        """Row-positional twin of _node_from_props, for queries using
+        _NODE_COLS. Column order here must match _NODE_COLS exactly."""
+        node = Node(row[0], row[1], row[2])
+        node.summary = row[3]
+        node.last_episode_at = _parse_dt(row[4])
+        node.last_consolidated_at = _parse_dt(row[5])
+        node.consolidation_run_id = row[6]
+        node.created_at = _parse_dt(row[7])
+        node.merged_into = row[8]
+        return node
+
     def _edge_from_props(self, props: dict) -> Edge:
         edge = Edge(
             props['id'],
@@ -71,6 +98,7 @@ class KnowledgeGarden:
         edge.confidence = props.get('confidence', 1.0)
         edge.source_type = props.get('source_type')
         edge.source_id = props.get('source_id')
+        edge.source_category = props.get('source_category')
         edge.ingested_at = _parse_dt(props.get('ingested_at'))
         edge.extracted_by = props.get('extracted_by')
         return edge
@@ -139,7 +167,9 @@ class KnowledgeGarden:
         result = self._graph.query(query, params)
         return [(self._node_from_props(r[0].properties), r[1]) for r in result.result_set]
 
-    def add_edge(self, source: str, target: str, relation: str, fact: str, valid_from: datetime) -> str:
+    def add_edge(self, source: str, target: str, relation: str, fact: str, valid_from: datetime,
+                 source_type: str | None = None, source_id: str | None = None,
+                 source_category: str | None = None) -> str:
         result = self._graph.query(
             "MATCH (a {id: $source})-[e:EDGE]->(b {id: $target}) "
             "WHERE e.relation = $relation AND e.valid_until IS NULL RETURN e",
@@ -155,12 +185,15 @@ class KnowledgeGarden:
             "MATCH (a {id: $source}), (b {id: $target}) "
             "CREATE (a)-[:EDGE {id: $id, source: $source, target: $target, "
             "relation: $relation, fact: $fact, valid_from: $valid_from, "
-            "valid_until: null, confidence: 1.0, source_type: null, source_id: null, "
+            "valid_until: null, confidence: 1.0, source_type: $source_type, "
+            "source_id: $source_id, source_category: $source_category, "
             "ingested_at: $ingested_at, extracted_by: null}]->(b)",
             {
                 'source': source, 'target': target, 'id': edge_id,
                 'relation': relation, 'fact': fact,
                 'valid_from': _fmt_dt(valid_from),
+                'source_type': source_type, 'source_id': source_id,
+                'source_category': source_category,
                 'ingested_at': _fmt_dt(datetime.now()),
             }
         )
@@ -221,24 +254,47 @@ class KnowledgeGarden:
     def get_all_nodes(self) -> list:
         # Excludes tombstoned (merged-away) nodes by default — get_node(id)
         # is the escape hatch for fetching a tombstone directly.
-        result = self._graph.query("MATCH (n:Entity) WHERE n.merged_into IS NULL RETURN n")
-        return [self._node_from_props(r[0].properties) for r in result.result_set]
+        result = self._graph.query(
+            f"MATCH (n:Entity) WHERE n.merged_into IS NULL RETURN {self._NODE_COLS}"
+        )
+        return [self._node_from_row(r) for r in result.result_set]
 
     def get_nodes_by_type(self, node_type: str) -> list:
         result = self._graph.query(
-            "MATCH (n:Entity {type: $type}) WHERE n.merged_into IS NULL RETURN n",
+            f"MATCH (n:Entity {{type: $type}}) WHERE n.merged_into IS NULL RETURN {self._NODE_COLS}",
             {"type": node_type},
         )
-        return [self._node_from_props(r[0].properties) for r in result.result_set]
+        return [self._node_from_row(r) for r in result.result_set]
+
+    def get_node_identities(self, node_type: str | None = None) -> list[tuple[str, str]]:
+        """(id, name) for every live node, optionally type-scoped. For callers
+        that only need to match on name and return an id -- notably
+        resolver.resolve_entity's exact-match tier, which was calling
+        get_all_nodes()/get_nodes_by_type() and building thousands of full Node
+        objects just to read `.name` and `.id` off them.
+
+        Even with the embedding excluded from the projection (see _NODE_COLS),
+        constructing 2167 Node objects costs ~390ms of the ~412ms; the Cypher
+        itself is ~23ms. Returning bare tuples skips that entirely."""
+        if node_type is None:
+            result = self._graph.query(
+                "MATCH (n:Entity) WHERE n.merged_into IS NULL RETURN n.id, n.name"
+            )
+        else:
+            result = self._graph.query(
+                "MATCH (n:Entity {type: $type}) WHERE n.merged_into IS NULL RETURN n.id, n.name",
+                {"type": node_type},
+            )
+        return [(r[0], r[1]) for r in result.result_set]
 
     def get_recently_active_nodes(self, before: datetime, limit: int = 30) -> list:
         result = self._graph.query(
             "MATCH (n:Entity) WHERE n.last_episode_at IS NOT NULL AND n.last_episode_at < $before "
             "AND n.merged_into IS NULL "
-            "RETURN n ORDER BY n.last_episode_at DESC LIMIT $limit",
+            f"RETURN {self._NODE_COLS} ORDER BY n.last_episode_at DESC LIMIT $limit",
             {"before": _fmt_dt(before), "limit": limit},
         )
-        return [self._node_from_props(r[0].properties) for r in result.result_set]
+        return [self._node_from_row(r) for r in result.result_set]
 
     def get_node_embeddings_by_type(self, node_type: str) -> list[tuple[str, str, list[float]]]:
         """(id, name, embedding) for every live (non-tombstoned) node of a

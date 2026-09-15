@@ -28,18 +28,46 @@ def _headers(token: str) -> dict:
 
 
 def _request_with_retry(method: str, url: str, token: str, **kwargs) -> dict:
+    """Retries transient failures, not just 429s. Previously a read timeout
+    escaped this loop entirely -- httpx raised straight out of the call below,
+    so the six attempts never applied and one slow response aborted the whole
+    Notion source. That's a likely event rather than a rare one: fetching a
+    single page costs many requests (block pagination plus recursion into
+    every has_children block), so across a workspace there are hundreds of
+    chances to hit the 30s timeout. Transient set mirrors
+    llm_clients._http_is_transient, plus 5xx (Notion returns 502/503 under
+    load, which raise_for_status would otherwise turn into a hard abort)."""
     delay = 1
+    last_error: Exception | None = None
     for attempt in range(6):
-        response = httpx.request(method, url, headers=_headers(token), timeout=30, **kwargs)
+        try:
+            response = httpx.request(method, url, headers=_headers(token), timeout=30, **kwargs)
+        except (httpx.TimeoutException, httpx.RemoteProtocolError, httpx.ConnectError) as e:
+            last_error = e
+            print(f"Transient error ({type(e).__name__}). Retrying in {delay}s... "
+                  f"(attempt {attempt + 1}/6)")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+            continue
+
         if response.status_code == 429:
             wait = int(response.headers.get("Retry-After", delay))
             print(f"Rate limited. Retrying in {wait}s...")
             time.sleep(wait)
             delay = min(delay * 2, 60)
             continue
+
+        if response.status_code >= 500:
+            last_error = RuntimeError(f"{response.status_code} from {url}")
+            print(f"Server error {response.status_code}. Retrying in {delay}s... "
+                  f"(attempt {attempt + 1}/6)")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+            continue
+
         response.raise_for_status()
         return response.json()
-    raise RuntimeError(f"Failed after retries: {url}")
+    raise RuntimeError(f"Failed after retries: {url}") from last_error
 
 
 def _load_last_fetched() -> str | None:

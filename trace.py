@@ -62,7 +62,9 @@ def _init_db():
                 completion_tokens INTEGER,
                 total_tokens INTEGER,
                 latency_ms INTEGER,
-                retries INTEGER
+                retries INTEGER,
+                status TEXT,
+                ended_at TEXT
             )"""
         )
         conn.execute(
@@ -77,6 +79,26 @@ def _init_db():
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_calls_run ON llm_calls(run_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id)")
+        # `status`/`ended_at` are new columns (in-flight call tracking) — a
+        # pre-existing db file's llm_calls table predates them, and `CREATE
+        # TABLE IF NOT EXISTS` above is a no-op against an already-existing
+        # table, so add them explicitly if missing.
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(llm_calls)")}
+        if "status" not in existing_cols:
+            conn.execute("ALTER TABLE llm_calls ADD COLUMN status TEXT")
+        if "ended_at" not in existing_cols:
+            conn.execute("ALTER TABLE llm_calls ADD COLUMN ended_at TEXT")
+        # system_prompt/cached_tokens/cache_write_tokens are new (OpenRouter
+        # prompt-caching support) — same ALTER-if-missing guard as above, so
+        # a pre-existing db file's llm_calls table (which predates these
+        # columns) keeps working instead of failing CREATE TABLE IF NOT
+        # EXISTS's no-op-against-existing-table behavior.
+        if "system_prompt" not in existing_cols:
+            conn.execute("ALTER TABLE llm_calls ADD COLUMN system_prompt TEXT")
+        if "cached_tokens" not in existing_cols:
+            conn.execute("ALTER TABLE llm_calls ADD COLUMN cached_tokens INTEGER")
+        if "cache_write_tokens" not in existing_cols:
+            conn.execute("ALTER TABLE llm_calls ADD COLUMN cache_write_tokens INTEGER")
     _initialized = True
 
 
@@ -103,8 +125,13 @@ class Run:
     consolidation batch, one query request) so every LLM call made inside it
     can be correlated later."""
 
-    def __init__(self, flow: str, meta: dict | None = None):
-        self.run_id = str(uuid.uuid4())
+    def __init__(self, flow: str, meta: dict | None = None, run_id: str | None = None):
+        # run_id is normally auto-generated; api.py's async query endpoint
+        # needs to know the id BEFORE the Run starts (to hand it to the
+        # client immediately, before the background thread that will
+        # eventually open this Run has even begun), so it pre-generates one
+        # and passes it in here rather than reading it back afterward.
+        self.run_id = run_id or str(uuid.uuid4())
         self.flow = flow
         self.meta = meta or {}
         self._seq = 0
@@ -140,37 +167,65 @@ class Run:
         except Exception as e:
             print(f"[trace] failed to write ({sql.split()[0]} ...): {e}")
 
-    def log_llm_call(
+    def _safe_write_returning_id(self, sql: str, params: tuple) -> int | None:
+        try:
+            with _write_lock, _connect() as conn:
+                return conn.execute(sql, params).lastrowid
+        except Exception as e:
+            print(f"[trace] failed to write ({sql.split()[0]} ...): {e}")
+            return None
+
+    def start_llm_call(self, *, kind: str, provider: str, model: str, prompt: str,
+                        system_prompt: str | None = None) -> int | None:
+        """Inserts an `llm_calls` row with `status="running"` before the
+        provider call is made, so a call that's still in flight is visible
+        (not indistinguishable from nothing happening) instead of only
+        appearing once it finishes. Pair with `finish_llm_call()`. Returns the
+        row id, or None if the write itself failed (tracing must never break
+        the flow it's observing). `system_prompt` is stored separately from
+        `prompt` (the user half) so two calls' static prefixes can be
+        diffed directly to confirm they were actually byte-identical —
+        `None` for calls with no system/user split (e.g. `embed()`)."""
+        return self._safe_write_returning_id(
+            "INSERT INTO llm_calls (run_id, seq, ts, kind, provider, model, prompt, system_prompt, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (self.run_id, self._next_seq(), _now(), kind, provider, model,
+             _clip(prompt), _clip(system_prompt), "running"),
+        )
+
+    def finish_llm_call(
         self,
+        call_id: int | None,
         *,
-        kind: str,
-        provider: str,
-        model: str,
-        prompt: str,
         response: str | None,
         error: str | None,
         usage,
         latency_ms: int,
         retries: int,
     ):
+        if call_id is None:
+            return
         self._safe_write(
-            "INSERT INTO llm_calls (run_id, seq, ts, kind, provider, model, prompt, response, "
-            "error, prompt_tokens, completion_tokens, total_tokens, latency_ms, retries) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "UPDATE llm_calls SET status=?, ended_at=?, response=?, error=?, "
+            "prompt_tokens=?, completion_tokens=?, total_tokens=?, "
+            "cached_tokens=?, cache_write_tokens=?, latency_ms=?, retries=? "
+            "WHERE id=?",
             (
-                self.run_id, self._next_seq(), _now(), kind, provider, model,
-                _clip(prompt), _clip(response), error,
+                "error" if error else "ok", _now(), _clip(response), error,
                 getattr(usage, "prompt_tokens", None) if usage else None,
                 getattr(usage, "completion_tokens", None) if usage else None,
                 getattr(usage, "total_tokens", None) if usage else None,
-                latency_ms, retries,
+                getattr(usage, "cached_tokens", None) if usage else None,
+                getattr(usage, "cache_write_tokens", None) if usage else None,
+                latency_ms, retries, call_id,
             ),
         )
 
     def event(self, step: str, **fields):
-        """Append a structured event under this run. Not used by Phase 0's
-        llm_clients.py wiring — reserved for flow-specific instrumentation
-        (chunk-level ingest events, traversal size, etc.) added later."""
+        """Append a structured event under this run — flow-specific
+        instrumentation outside the LLM-call tracing above. Used by
+        `retrieval/query.py`'s per-query timing waterfall and
+        `enrichment/resolver.py`'s resolve_entity() exit-tier tagging."""
         self._safe_write(
             "INSERT INTO events (run_id, seq, ts, step, payload_json) VALUES (?,?,?,?,?)",
             (self.run_id, self._next_seq(), _now(), step, json.dumps(fields, default=str)),

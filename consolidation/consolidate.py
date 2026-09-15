@@ -4,7 +4,7 @@ from datetime import datetime
 
 from core.graph import KnowledgeGarden
 from llm_clients import LLMClient
-from prompts import CONSOLIDATION_PROMPT
+from prompts import CONSOLIDATION_SYSTEM_PROMPT, CONSOLIDATION_USER_PROMPT
 from enrichment.resolver import resolve_entity
 from .episodic import get_episode_for_entity
 from .consolidation_schema import ConsolidationResult
@@ -23,14 +23,17 @@ def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
         f'{i+1}. "{ep.text}"' for i, ep in enumerate(episodes)
     )
 
-    prompt = (
-        CONSOLIDATION_PROMPT
+    user_prompt = (
+        CONSOLIDATION_USER_PROMPT
         .replace("{entity_name}", node.name)
         .replace("{existing_summary}", node.summary or "None yet — this is the first consolidation.")
         .replace("{episodes}", episodes_text)
     )
 
-    raw = client.generate_gemini(prompt, schema_type=ConsolidationResult)
+    raw = client.generate_gemini(
+        CONSOLIDATION_SYSTEM_PROMPT, user_prompt,
+        schema_type=ConsolidationResult, kind="consolidate",
+    )
     result = ConsolidationResult(**json.loads(raw))
 
     run_id = str(uuid.uuid4())
@@ -54,7 +57,8 @@ def consolidate(entity_id: str, kg: KnowledgeGarden, client: LLMClient):
             })
             continue
         try:
-            kg.add_edge(entity_id, target_id, se.relation, se.fact, datetime.now())
+            kg.add_edge(entity_id, target_id, se.relation, se.fact, datetime.now(),
+                       source_type="consolidation", source_id=run_id)
             edges_added += 1
         except ValueError:
             pass

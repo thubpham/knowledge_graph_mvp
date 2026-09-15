@@ -39,7 +39,7 @@ def _load_last_fetched() -> datetime | None:
     return None
 
 
-def _save_last_fetched(dt: datetime):
+def save_last_fetched(dt: datetime):
     LAST_FETCHED_PATH.write_text(json.dumps({"last_fetched": dt.isoformat()}))
 
 
@@ -84,7 +84,7 @@ def _message_to_text(headers: list[dict], body: str) -> str:
     return "\n".join(parts)
 
 
-def fetch_gmail_messages(days_back: int = 30, max_results: int = 100) -> list[dict]:
+def fetch_gmail_messages(days_back: int = 30, max_results: int = 100) -> tuple[list[dict], datetime]:
     fetch_started_at = datetime.now(timezone.utc)
     last_fetched = _load_last_fetched()
 
@@ -95,7 +95,13 @@ def fetch_gmail_messages(days_back: int = 30, max_results: int = 100) -> list[di
         after = datetime.now(timezone.utc) - timedelta(days=days_back)
         print(f"Fetching Gmail messages (last {days_back} days)...")
 
-    query = f"after:{int(after.timestamp())}"
+    # Promotions are never worth ingesting -- measured on this inbox
+    # (2026-07-26, 200 of 443 last-30d messages sampled): 10% of volume, and
+    # every sampled subject was pure marketing ("40% off delivery", "Make
+    # their day with a gift", "Make your next ride Elite"). Excluding them at
+    # the query level, not just down-weighting after ingest, skips the
+    # extraction+resolution cost entirely (~44 fewer episodes, ~$1.80/run).
+    query = f"after:{int(after.timestamp())} -category:promotions"
     service = _get_service()
     results = []
     page_token = None
@@ -135,12 +141,22 @@ def fetch_gmail_messages(days_back: int = 30, max_results: int = 100) -> list[di
                 "message_time": message_time,
                 "url": f"https://mail.google.com/mail/u/0/#inbox/{msg['id']}",
                 "sender": _header(headers, "From"),
+                # format="full" (already requested above) returns labelIds at
+                # no extra API cost -- this was previously fetched and
+                # discarded. Used by the ingester to compute a relevance
+                # weight (see gmail_ingester.py / retrieval/scoring.py); kept
+                # as the raw list here rather than pre-classified, so the
+                # classification logic lives in one place.
+                "labels": msg.get("labelIds", []),
             })
 
         page_token = resp.get("nextPageToken")
         if not page_token or len(results) >= max_results:
             break
 
-    _save_last_fetched(fetch_started_at)
+    # Cursor is deliberately NOT saved here -- see the ingester, which saves it
+    # only after every item has actually been ingested. Saving at fetch time
+    # orphans everything fetched if the run dies mid-ingestion. Mirrors the
+    # notion_fetcher/notion_ingester split.
     print(f"Done. {len(results)} qualifying messages fetched.")
-    return results
+    return results, fetch_started_at
