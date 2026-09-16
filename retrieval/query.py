@@ -73,6 +73,17 @@ def query(kg: KnowledgeGarden, question: str, client: LLMClient, now: datetime):
     query_intent = QueryIntent.model_validate_json(response)
     _step(run, t, "intent_parse", pattern=query_intent.pattern, anchor=query_intent.anchor_entity)
 
+    if query_intent.pattern == "unsupported":
+        # No anchor to resolve, nothing to traverse -- an honest decline
+        # instead of forcing a fit and hallucinating an anchor_entity (see
+        # query_schema.py's QueryIntent.pattern docstring). Logged as its own
+        # event (not just intent_parse) so scripts/trace_dashboard.py can
+        # surface these separately -- this is the signal for deciding
+        # whether/what new traversal pattern is actually worth building.
+        if run:
+            run.event("query_unsupported", question=question, reason=query_intent.reason)
+        return {"error": "unsupported query type", "question": question, "reason": query_intent.reason}
+
     # Resolve the LLM's free-text anchor/target to EVERY matching node, not
     # just one -- resolve_entity (the ingest-side resolver) returns a single,
     # type-scoped id, which is correct for writes but means a query silently

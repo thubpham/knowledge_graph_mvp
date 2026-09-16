@@ -186,6 +186,37 @@ def _progress_panel(conn) -> Text | None:
     return Text.from_markup("\n".join(lines) + "\n")
 
 
+def _unsupported_queries_panel(conn, limit: int) -> Text | None:
+    """Questions the query classifier explicitly declined (see
+    retrieval/query.py's pattern == "unsupported" branch, added because
+    forcing every question into one of 5 traversal patterns was producing
+    hallucinated anchor entities for aggregate/ranking and ungrounded
+    first-person questions). This is the real-usage signal for deciding
+    whether/what new traversal pattern is actually worth building, instead
+    of guessing -- read this table before adding one."""
+    rows = conn.execute(
+        """
+        SELECT e.ts, e.payload_json
+        FROM events e
+        WHERE e.step = 'query_unsupported'
+        ORDER BY e.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    if not rows:
+        return None
+    lines = ["[bold]Unsupported queries[/bold] [dim](signal for new traversal patterns)[/dim]"]
+    for r in rows:
+        p = json.loads(r["payload_json"])
+        ts = r["ts"].split("T")[-1].split(".")[0]
+        lines.append(
+            f"  [dim]{ts}[/dim]  \"{_clip(p.get('question', ''), 50)}\" "
+            f"— {_clip(p.get('reason', ''), 70)}"
+        )
+    return Text.from_markup("\n".join(lines) + "\n")
+
+
 def render(limit: int, run_id: str | None, flow: str | None):
     if not DB_PATH.exists():
         return _waiting_message()
@@ -195,6 +226,9 @@ def render(limit: int, run_id: str | None, flow: str | None):
         progress = _progress_panel(conn)
         if progress:
             parts.append(progress)
+        unsupported = _unsupported_queries_panel(conn, limit)
+        if unsupported:
+            parts.append(unsupported)
         parts.append(_runs_table(conn, limit, flow))
         parts.append(_calls_table(conn, limit, run_id))
         return Group(*parts)

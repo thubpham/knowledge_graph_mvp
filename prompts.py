@@ -176,33 +176,43 @@ You are a query router for a knowledge graph. Given a natural language question,
 - "path" — asking how two specific entities are connected (e.g. "how is alice connected to postgres?")
 - "impact" — asking what would be affected if an entity changed or failed (e.g. "what breaks if postgres goes down?")
 - "history" — asking about past states, changes over time, or "has X ever been Y" (e.g. "what teams has alice been on?")
+- "unsupported" — the question does not fit any pattern above. Use this rather than forcing a fit — a wrong guess here produces a confidently wrong or nonsensical anchor lookup, which is worse than an honest "can't do this yet." Two known cases:
+  - **Aggregate/ranking questions** — asking for a count, ranking, or superlative across many entities rather than about one specific named entity (e.g. "who is connected to the most people?", "which team owns the most services?", "how many people work on X?"). There is no entity to anchor on; forcing one of the other patterns means inventing a fake anchor_entity out of the question's own words (e.g. "largest_number_of_people"), which will never match a real node.
+  - **Ungrounded self-reference** — the question refers to "I"/"me"/"my" and there is no way for you to know who that is (you are not told the asking user's identity). Do NOT extract "i" or "me" as the anchor_entity — it will never match a node. Use "unsupported" instead unless the question also names a real entity you can anchor on.
 
 ### Relation Vocabulary
 MEMBER_OF | OWNS | DEPENDS_ON | USES | REPORTED | RESOLVED_BY | MENTIONED_IN
 
 ### Output Format
 Return ONLY a valid JSON object with these keys:
-- "pattern": one of the 5 pattern names above
-- "anchor_entity": the primary entity the question is about, as it appears in the question (lowercase, normalized form expected to match a node name)
+- "pattern": one of the 6 pattern names above
+- "anchor_entity": the primary entity the question is about, as it appears in the question (lowercase, normalized form expected to match a node name). Null when pattern is "unsupported".
 - "relation": the relation type from the vocabulary above that's relevant to this query, or null if not applicable
 - "direction": "in" or "out" — for direct_lookup and history, indicates whether the anchor entity is the source or target of the relation. Use "out" if the anchor is doing the action (e.g. "alice MEMBER_OF X"), "in" if the anchor is receiving it (e.g. "X OWNS auth_service" — anchor is auth_service, direction is "in")
 - "target_entity": for "path" queries only, the second entity. Otherwise null.
+- "reason": null unless pattern is "unsupported", in which case a short (one sentence) explanation of why.
 
 ### Examples
 Question: "Who owns the auth service?"
-Output: {"pattern": "direct_lookup", "anchor_entity": "auth_service", "relation": "OWNS", "direction": "in", "target_entity": null}
+Output: {"pattern": "direct_lookup", "anchor_entity": "auth_service", "relation": "OWNS", "direction": "in", "target_entity": null, "reason": null}
 
 Question: "What teams has alice been on?"
-Output: {"pattern": "history", "anchor_entity": "alice", "relation": "MEMBER_OF", "direction": "out", "target_entity": null}
+Output: {"pattern": "history", "anchor_entity": "alice", "relation": "MEMBER_OF", "direction": "out", "target_entity": null, "reason": null}
 
 Question: "What breaks if postgres goes down?"
-Output: {"pattern": "impact", "anchor_entity": "postgres", "relation": "DEPENDS_ON", "direction": "in", "target_entity": null}
+Output: {"pattern": "impact", "anchor_entity": "postgres", "relation": "DEPENDS_ON", "direction": "in", "target_entity": null, "reason": null}
 
 Question: "How is alice connected to postgres?"
-Output: {"pattern": "path", "anchor_entity": "alice", "relation": null, "direction": null, "target_entity": "postgres"}
+Output: {"pattern": "path", "anchor_entity": "alice", "relation": null, "direction": null, "target_entity": "postgres", "reason": null}
 
 Question: "What does the infra team work with?"
-Output: {"pattern": "neighborhood", "anchor_entity": "infra_team", "relation": null, "direction": null, "target_entity": null}
+Output: {"pattern": "neighborhood", "anchor_entity": "infra_team", "relation": null, "direction": null, "target_entity": null, "reason": null}
+
+Question: "Who is connected to the largest number of people?"
+Output: {"pattern": "unsupported", "anchor_entity": null, "relation": null, "direction": null, "target_entity": null, "reason": "Aggregate/ranking question across many entities, not about one named entity — no traversal pattern covers this yet."}
+
+Question: "Who am I related to?"
+Output: {"pattern": "unsupported", "anchor_entity": null, "relation": null, "direction": null, "target_entity": null, "reason": "First-person reference ('I') with no way to know the asking user's identity, and no other named entity in the question."}
 """
 
 QUERY_INTENT_USER_PROMPT = """

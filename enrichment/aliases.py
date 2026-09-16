@@ -39,11 +39,33 @@ def load_aliases() -> dict[str, str]:
 
 def save_alias(normalized_name: str, canonical_id: str):
     """Read-modify-write — fine for this low-volume, single-user tool; not
-    trying to handle concurrent writers."""
+    trying to handle concurrent writers.
+
+    First-write-wins: both call sites (resolver.py's automatic llm_confirm
+    tier and run_dedup_review.py's offline pass) are the same trust level --
+    an unattended LLM confirmation, no human actually looks at either one --
+    so there's no principled reason to let a later call silently clobber an
+    earlier confirmed mapping. Previously this was an unconditional
+    overwrite: a second, possibly-wrong confirmation for the same normalized
+    name would silently replace the first with no record of the change. Now
+    a conflicting write is refused and printed instead of applied -- see
+    .local/IMPROVEMENTS.md's Entity Resolution/Dedup section for the
+    additive (list-valued, re-disambiguate via confirm_match) alternative
+    design, deferred until a real conflict is observed here."""
     global _cache, _cache_mtime
 
     ALIAS_PATH.parent.mkdir(parents=True, exist_ok=True)
     aliases = json.loads(ALIAS_PATH.read_text()) if ALIAS_PATH.exists() else {}
+
+    existing = aliases.get(normalized_name)
+    if existing is not None and existing != canonical_id:
+        print(
+            f"alias conflict: {normalized_name!r} already -> {existing}, "
+            f"new confirmation -> {canonical_id} -- keeping {existing} "
+            "(first-write-wins; see enrichment/aliases.py's save_alias docstring)"
+        )
+        return
+
     aliases[normalized_name] = canonical_id
     ALIAS_PATH.write_text(json.dumps(aliases, indent=2, sort_keys=True) + "\n")
 

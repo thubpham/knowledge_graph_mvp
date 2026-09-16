@@ -305,12 +305,20 @@ def resolve_entity(
 
     top_distance = candidates[0][1]
 
-    # 3. Distinct: nothing close enough to even ask about.
-    if top_distance > NO_MATCH_DISTANCE:
-        if run:
-            run.event("resolve_tier", tier="embedding_no_match", name=node_name,
-                       matched=False, top_distance=top_distance)
-        return None
+    # 3. NO_MATCH_DISTANCE was calibrated for gemini-embedding-001 and never
+    # re-fit to nomic-embed-text (see the module comment above). Measured
+    # live (2026-09-15): every embedding_no_match rejection clustered at
+    # 0.42-0.49 regardless of whether the candidate was a real near-miss or
+    # totally unrelated -- including a real person ("puneet") rejected at
+    # 0.485 with no LLM ever asked. The cutoff isn't discriminating, and it
+    # only ever short-circuited ~4-5% of resolve_entity calls anyway,
+    # so it's disabled rather than re-tuned blind: everything now goes to
+    # the LLM, which already has its own well-exercised null-match path
+    # (see confirm_match / ENTITY_MATCH_SYSTEM_PROMPT's "when in doubt,
+    # don't match" instruction). Revert: restore
+    # `if top_distance > NO_MATCH_DISTANCE: return None` here (git revert
+    # this commit) once scripts/run_dedup_review.py has produced enough
+    # confirmed/rejected pairs under nomic to calibrate a real value.
 
     # 4. Everything else goes to the LLM — no blind auto-merge tier. See the
     # module comment above for why.

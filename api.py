@@ -261,6 +261,18 @@ def _execute_query(kg: KnowledgeGarden, client: LLMClient, question: str) -> Que
                     f"Did you mean: {', '.join(s['id'] for s in suggestions[:3])}?"
                 )
 
+        # Unsupported query type (see query_schema.py's QueryIntent.pattern):
+        # there's no anchor at all, so a name-similarity "did you mean"
+        # suggestion would be meaningless -- give the honest capability
+        # boundary instead.
+        elif raw.get("error") == "unsupported query type":
+            error_msg = (
+                "I can look up direct relationships, neighborhoods, paths, "
+                "impact, and history for a specific named entity — not "
+                "aggregate/ranking questions or unresolved self-reference "
+                "yet." + (f" ({raw['reason']})" if raw.get("reason") else "")
+            )
+
         return QueryResponse(question=question, results=[], error=error_msg, debug=debug)
 
     # history_traversal returns a plain dict
