@@ -282,9 +282,6 @@ All entry-point scripts live in `scripts/`:
 - **Single-user only** — no multi-tenancy, no auth on the API or UI. Don't
   expose port 8000 beyond your own machine.
 - **No automated tests yet.**
-- **No pinned dependency versions** — `requirements.txt` lists package names
-  without version pins; if something breaks after a fresh install, check for
-  upstream breaking changes first.
 - **No scheduled ingestion** — `scripts/run_ingest.py`/`scripts/run_consolidation.py` are run
   manually; there's no cron/nightly job wired up yet.
 
@@ -302,3 +299,7 @@ All entry-point scripts live in `scripts/`:
 - **`uvicorn: command not found`** — make sure you ran
   `pip install -r requirements.txt` in the same environment you're running
   commands from.
+
+## 7) License
+
+MIT — see [LICENSE](LICENSE).
