@@ -27,3 +27,15 @@ def cursor_path(source: str) -> Path:
     directory = _LOCAL_DIR / "graphs" / name
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{source}_last_fetched.json"
+
+
+def checkpoint_dir() -> Path:
+    """Where in-flight extraction results are kept until their episode is fully
+    written. Namespaced by graph like the cursors, for the same reason: a
+    checkpoint made against one graph's recent-entity context shouldn't be
+    resumed into another."""
+    name = graph_name()
+    base = _LOCAL_DIR if name == DEFAULT_GRAPH_NAME else _LOCAL_DIR / "graphs" / name
+    directory = base / "extraction_checkpoints"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory

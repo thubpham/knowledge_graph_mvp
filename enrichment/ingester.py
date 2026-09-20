@@ -1,7 +1,9 @@
+import hashlib
 import json
 from pathlib import Path
 
 from core.graph import KnowledgeGarden
+from core.graph_config import checkpoint_dir
 from llm_clients import LLMClient
 from core.schema import *
 from .extractor import extract_entities_and_relations
@@ -54,6 +56,33 @@ def _log_unmapped(response: ExtractionResult, episode_id: str, reference_time: d
             }) + "\n")
 
 
+def _chunk_checkpoint_path(chunk: str) -> Path:
+    return checkpoint_dir() / f"{hashlib.sha256(chunk.encode()).hexdigest()[:32]}.json"
+
+
+def _extract_chunk_checkpointed(chunk: str, client: LLMClient, known_entities: list[str]) -> ExtractionResult:
+    """Extraction is the slow, paid step (two LLM calls per chunk, sequential),
+    and its result used to live only in a local variable: any failure later in
+    ingest_episode -- resolution, a write, an embedder outage -- threw away every
+    chunk already extracted and the next attempt paid for all of it again. Each
+    chunk's result is now persisted the moment it's produced, content-addressed
+    by the chunk text, so a re-run of the same text resumes at the first chunk
+    that hadn't finished. Removed once the episode is fully written."""
+    path = _chunk_checkpoint_path(chunk)
+    if path.exists():
+        try:
+            result = ExtractionResult.model_validate_json(path.read_text())
+            print("  ↻ resumed chunk from extraction checkpoint")
+            return result
+        except Exception:
+            pass  # unreadable or from an older schema: just extract it again
+    result = extract_entities_and_relations(chunk, client, known_entities=known_entities)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(result.model_dump_json())
+    tmp.replace(path)  # atomic, so a kill mid-write can't leave a half-file
+    return result
+
+
 def ingest_episode(
     raw_text: str,
     reference_time: datetime,
@@ -85,10 +114,8 @@ def ingest_episode(
         f"{node.name} ({node.type})"
         for node in kg.get_recently_active_nodes(before=reference_time)
     ]
-    chunk_results = [
-        extract_entities_and_relations(chunk, client, known_entities=known_entities)
-        for chunk in chunk_text(raw_text)
-    ]
+    chunks = chunk_text(raw_text)
+    chunk_results = [_extract_chunk_checkpointed(chunk, client, known_entities) for chunk in chunks]
     response = _merge_extractions(chunk_results)
     node_id_mapping = {}
     for node in response.nodes:
@@ -154,4 +181,6 @@ def ingest_episode(
             kg.update_node(node, last_episode_at=reference_time.isoformat())
         except ValueError:
             pass
+    for chunk in chunks:
+        _chunk_checkpoint_path(chunk).unlink(missing_ok=True)
     return episode_id
