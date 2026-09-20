@@ -8,12 +8,14 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from core.graph_config import cursor_path
+
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
 _LOCAL_DIR = Path(__file__).parent.parent.parent / ".local"
 CREDENTIALS_PATH = _LOCAL_DIR / "sources" / "credentials.json"
 TOKEN_PATH = _LOCAL_DIR / "sources" / "token.json"
-LAST_FETCHED_PATH = _LOCAL_DIR / "gcal_last_fetched.json"
+LAST_FETCHED_PATH = cursor_path("gcal")
 
 MIN_WORDS = 20
 

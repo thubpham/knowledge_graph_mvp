@@ -2,12 +2,14 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from core.graph_config import cursor_path
+
 MIN_WORDS = 20
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _SESSION_DIR_NAME = "".join(c if c.isalnum() else "-" for c in str(_PROJECT_ROOT))
 _SESSION_DIR = Path.home() / ".claude" / "projects" / _SESSION_DIR_NAME
-LAST_FETCHED_PATH = _PROJECT_ROOT / ".local" / "claude_sessions_last_fetched.json"
+LAST_FETCHED_PATH = cursor_path("claude_sessions")
 
 
 def _load_last_fetched() -> datetime | None:

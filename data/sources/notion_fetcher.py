@@ -6,12 +6,13 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
+from core.graph_config import cursor_path
 
 load_dotenv()
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
-LAST_FETCHED_PATH = Path(__file__).parent.parent.parent / ".local" / "notion_last_fetched.json"
+LAST_FETCHED_PATH = cursor_path("notion")
 
 BLOCK_TYPES = {
     "paragraph", "heading_1", "heading_2", "heading_3",

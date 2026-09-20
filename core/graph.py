@@ -4,6 +4,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from falkordb import FalkorDB
 from .schema import Node, Edge, Episode
+from .graph_config import graph_name
 
 load_dotenv()
 
@@ -22,7 +23,7 @@ class KnowledgeGarden:
         host = os.getenv('FALKORDB_HOST', 'localhost')
         port = int(os.getenv('FALKORDB_PORT', 6379))
         self._db = FalkorDB(host=host, port=port)
-        self._graph = self._db.select_graph('knowledge_garden')
+        self._graph = self._db.select_graph(graph_name())
         self._create_indexes()
 
     def _create_indexes(self):
