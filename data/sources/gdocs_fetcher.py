@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -55,6 +56,77 @@ def _doc_to_text(name: str, body: str, owner: str) -> str:
     return "\n".join(parts)
 
 
+def _file_to_doc(service, file: dict, fallback_time: datetime, min_words: int = MIN_WORDS) -> dict | None:
+    """Export one Drive file to the doc dict the ingester consumes, or None if
+    it can't be exported or is below `min_words`. Shared by the bulk fetch and
+    the single-document fetch so both produce identical shapes."""
+    file_id = file["id"]
+    title = file.get("name", "Untitled document")
+
+    try:
+        exported = service.files().export(fileId=file_id, mimeType="text/plain").execute()
+    except HttpError as e:
+        print(f"  Skipping '{title}' (export failed: {e.reason})")
+        return None
+    body = exported.decode("utf-8", errors="ignore") if isinstance(exported, bytes) else exported
+
+    owners = file.get("owners", [])
+    owner = owners[0].get("displayName") or owners[0].get("emailAddress", "") if owners else ""
+
+    text = _doc_to_text(title, body, owner)
+    word_count = len(text.split())
+
+    if word_count < min_words:
+        print(f"  Skipping '{title}' ({word_count} words, below threshold)")
+        return None
+
+    print(f"  Fetched '{title}' ({word_count} words)")
+    return {
+        "document_id": file_id,
+        "title": title,
+        "plain_text_content": text,
+        "modified_time": file.get("modifiedTime", fallback_time.isoformat()),
+        "url": file.get("webViewLink", ""),
+        "owner": owner,
+    }
+
+
+_DOC_URL_RE = re.compile(r"/document/(?:u/\d+/)?d/([A-Za-z0-9_-]+)")
+_BARE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{20,}$")
+
+
+def parse_document_id(url_or_id: str) -> str:
+    """Accepts a docs.google.com/document/d/<ID>/... URL or a bare document ID."""
+    value = url_or_id.strip()
+    match = _DOC_URL_RE.search(value)
+    if match:
+        return match.group(1)
+    if _BARE_ID_RE.match(value):
+        return value
+    raise ValueError(f"Not a Google Docs URL or document ID: {url_or_id!r}")
+
+
+def fetch_gdocs_document(url_or_id: str) -> dict:
+    """Fetch exactly one Google Doc by URL or ID. Does not touch the fetch
+    cursor and has no minimum-length threshold (an explicit request beats the
+    bulk noise filter). Raises ValueError if the file isn't a Google Doc or is
+    trashed, so the caller sees why nothing was ingested."""
+    document_id = parse_document_id(url_or_id)
+    service = _get_service()
+    file = service.files().get(
+        fileId=document_id,
+        fields="id, name, mimeType, trashed, modifiedTime, webViewLink, owners",
+    ).execute()
+    if file.get("mimeType") != DOC_MIME_TYPE:
+        raise ValueError(f"{file.get('name')!r} is a {file.get('mimeType')}, not a Google Doc")
+    if file.get("trashed"):
+        raise ValueError(f"{file.get('name')!r} is in the trash")
+    doc = _file_to_doc(service, file, datetime.now(timezone.utc), min_words=1)
+    if doc is None:
+        raise ValueError(f"Could not export {file.get('name')!r} as text")
+    return doc
+
+
 def fetch_gdocs_documents(days_back: int = 30, max_results: int = 100) -> tuple[list[dict], datetime]:
     fetch_started_at = datetime.now(timezone.utc)
     last_fetched = _load_last_fetched()
@@ -81,35 +153,9 @@ def fetch_gdocs_documents(days_back: int = 30, max_results: int = 100) -> tuple[
         ).execute()
 
         for file in resp.get("files", []):
-            file_id = file["id"]
-            title = file.get("name", "Untitled document")
-
-            try:
-                exported = service.files().export(fileId=file_id, mimeType="text/plain").execute()
-            except HttpError as e:
-                print(f"  Skipping '{title}' (export failed: {e.reason})")
-                continue
-            body = exported.decode("utf-8", errors="ignore") if isinstance(exported, bytes) else exported
-
-            owners = file.get("owners", [])
-            owner = owners[0].get("displayName") or owners[0].get("emailAddress", "") if owners else ""
-
-            text = _doc_to_text(title, body, owner)
-            word_count = len(text.split())
-
-            if word_count < MIN_WORDS:
-                print(f"  Skipping '{title}' ({word_count} words, below threshold)")
-                continue
-
-            print(f"  Fetched '{title}' ({word_count} words)")
-            results.append({
-                "document_id": file_id,
-                "title": title,
-                "plain_text_content": text,
-                "modified_time": file.get("modifiedTime", fetch_started_at.isoformat()),
-                "url": file.get("webViewLink", ""),
-                "owner": owner,
-            })
+            doc = _file_to_doc(service, file, fetch_started_at)
+            if doc is not None:
+                results.append(doc)
 
         page_token = resp.get("nextPageToken")
         if not page_token or len(results) >= max_results:

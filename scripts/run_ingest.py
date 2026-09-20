@@ -1,3 +1,4 @@
+import argparse
 import os
 import signal
 import sys
@@ -5,13 +6,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.graph import KnowledgeGarden
+from core.graph_config import graph_name
 from core.failure_log import log_ingest_failure
 from llm_clients import LLMClient
 from trace import Run
 from data.sources.notion_ingester import ingest_notion_pages
 from data.sources.gcal_ingester import ingest_gcal_events
 from data.sources.gmail_ingester import ingest_gmail_messages
-from data.sources.gdocs_ingester import ingest_gdocs_documents
+from data.sources.gdocs_ingester import ingest_gdocs_documents, ingest_one_gdocs_document
 # Claude Code Sessions is deliberately excluded here — see the comment at the
 # top of data/sources/claude_sessions_ingester.py.
 
@@ -26,7 +28,15 @@ def _terminate(signum, _frame):
 signal.signal(signal.SIGTERM, _terminate)
 signal.signal(signal.SIGINT, _terminate)
 
+parser = argparse.ArgumentParser(description="Ingest sources into the knowledge graph.")
+parser.add_argument(
+    "--gdoc", metavar="URL_OR_ID",
+    help="ingest just this one Google Doc (URL or document ID) instead of the full batch run",
+)
+args = parser.parse_args()
+
 kg = KnowledgeGarden()
+print(f"Graph: {graph_name()}\n")
 # Extraction is accuracy-sensitive and relatively low call volume (once per
 # chunk) -> Groq's 70B model by convention. Entity-resolution confirmation is
 # the highest call-volume, lowest-individual-stakes step (a wrong local call
@@ -66,6 +76,15 @@ def _run_source(name: str, fn):
     )
     return result
 
+
+if args.gdoc:
+    result = _run_source(
+        "Google Docs (single)",
+        lambda kg, client, resolution_client: ingest_one_gdocs_document(kg, client, resolution_client, args.gdoc),
+    )
+    # A source-level abort (bad URL, not a Doc, auth failure) also returns zeros,
+    # so "nothing ingested and nothing deduped" is the failure signal.
+    sys.exit(0 if result["ingested"] or result["skipped_dedup"] else 1)
 
 _run_source("Notion", ingest_notion_pages)
 print()
