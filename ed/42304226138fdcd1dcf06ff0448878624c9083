@@ -1,0 +1,19 @@
+README.md
+  s_9563ee461ed4b3::t_27303e99e94a60 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.6",
+  "base_commit_sha": "ed42304226138fdcd1dcf06ff0448878624c9083",
+  "prompts": {},
+  "sessions": {
+    "s_9563ee461ed4b3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ec9abad-6ee1-4c52-8dd8-e3d147bd4aad",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Bao Thu Pham <thubpham@sas.upenn.edu>"
+    }
+  }
+}
