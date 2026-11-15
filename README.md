@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="Knowledge Graph MVP banner" width="100%">
+</p>
+
 # Knowledge Graph MVP
 
 **TL;DR:** a local, personal knowledge graph. It reads your own Notion,
